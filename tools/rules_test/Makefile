@@ -1,16 +1,16 @@
 ##
-## Author......: Jens Steube <jens.steube@gmail.com>
+## Author......: See docs/credits.txt
 ## License.....: MIT
 ##
 
-GCC     := /usr/bin/x86_64-linux-gnu-gcc-4.6
-ROOT    := ../../
-CFLAGS  := -O2 -s -ansi -pipe -W -Wall -I$(ROOT)include/
+GCC     := gcc
+ROOT    := ../..
+CFLAGS  := -O2 -s -pipe -W -Wall -std=c99 -I$(ROOT)/include/ -I$(ROOT)/OpenCL/
 LIBS    :=
-TARGET  := gpu2cpu_rule_test
-INCLUDE := $(ROOT)src/rp_gpu_on_cpu.cpp cpu_rules.cpp
+TARGET  := kernel2cpu_rule_test
+INCLUDE := $(ROOT)/src/rp_kernel_on_cpu.c cpu_rules.c
 
-all: ${TARGET}.cpp
+all: ${TARGET}.c
 	${GCC} ${CFLAGS} ${INCLUDE} $< -o ${TARGET}.bin ${LIBS}
 
 clean:

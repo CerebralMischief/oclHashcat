@@ -1,11 +1,14 @@
 *.exe
 *.bin
 *.app
+hashcat
+*.potfile
 *.restore
 *.dictstat
 *.pot
 *.log
+*.dSYM
+kernels/**
 lib/*.a
 obj/*.o
-kernels/4098/*.llvmir
-kernels/4318/*.cubin
+include/CL
