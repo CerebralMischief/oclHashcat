@@ -3,133 +3,137 @@
  * License.....: MIT
  */
 
-#pragma GCC diagnostic ignored "-Wunused-parameter"
-#pragma GCC diagnostic ignored "-Wunused-function"
-
 #include "common.h"
 #include "types.h"
 #include "bitops.h"
 #include "rp.h"
 #include "rp_kernel_on_cpu.h"
 
-u32 swap_workaround (const u32 n)
+static u32 amd_bytealign (const u32 a, const u32 b, const u32 c)
 {
-  return byte_swap_32 (n);
+  const u64 tmp = ((((u64) (a)) << 32) | ((u64) (b))) >> ((c & 3) * 8);
+
+  return (u32) tmp;
 }
 
-static u32 generate_cmask (u32 buf)
+static u32 swap32_S (const u32 value)
 {
-  const u32 rmask =  ((buf & 0x40404040) >> 1)
-                  & ~((buf & 0x80808080) >> 2);
+  return byte_swap_32 (value);
+}
 
-  const u32 hmask = (buf & 0x1f1f1f1f) + 0x05050505;
-  const u32 lmask = (buf & 0x1f1f1f1f) + 0x1f1f1f1f;
+static u32 generate_cmask (const u32 value)
+{
+  const u32 rmask =  ((value & 0x40404040u) >> 1u)
+                  & ~((value & 0x80808080u) >> 2u);
+
+  const u32 hmask = (value & 0x1f1f1f1fu) + 0x05050505u;
+  const u32 lmask = (value & 0x1f1f1f1fu) + 0x1f1f1f1fu;
 
   return rmask & ~hmask & lmask;
 }
 
-static void truncate_right (u32 w0[4], u32 w1[4], const u32 len)
+static void truncate_right (u32 buf0[4], u32 buf1[4], const u32 offset)
 {
-  const u32 tmp = (1u << ((len % 4) * 8)) - 1;
+  const u32 tmp = (1u << ((offset & 3u) * 8u)) - 1u;
 
-  switch (len / 4)
+  switch (offset / 4)
   {
-    case  0:  w0[0] &= tmp;
-              w0[1]  = 0;
-              w0[2]  = 0;
-              w0[3]  = 0;
-              w1[0]  = 0;
-              w1[1]  = 0;
-              w1[2]  = 0;
-              w1[3]  = 0;
+    case  0:  buf0[0] &= tmp;
+              buf0[1]  = 0;
+              buf0[2]  = 0;
+              buf0[3]  = 0;
+              buf1[0]  = 0;
+              buf1[1]  = 0;
+              buf1[2]  = 0;
+              buf1[3]  = 0;
               break;
-    case  1:  w0[1] &= tmp;
-              w0[2]  = 0;
-              w0[3]  = 0;
-              w1[0]  = 0;
-              w1[1]  = 0;
-              w1[2]  = 0;
-              w1[3]  = 0;
+    case  1:  buf0[1] &= tmp;
+              buf0[2]  = 0;
+              buf0[3]  = 0;
+              buf1[0]  = 0;
+              buf1[1]  = 0;
+              buf1[2]  = 0;
+              buf1[3]  = 0;
               break;
-    case  2:  w0[2] &= tmp;
-              w0[3]  = 0;
-              w1[0]  = 0;
-              w1[1]  = 0;
-              w1[2]  = 0;
-              w1[3]  = 0;
+    case  2:  buf0[2] &= tmp;
+              buf0[3]  = 0;
+              buf1[0]  = 0;
+              buf1[1]  = 0;
+              buf1[2]  = 0;
+              buf1[3]  = 0;
               break;
-    case  3:  w0[3] &= tmp;
-              w1[0]  = 0;
-              w1[1]  = 0;
-              w1[2]  = 0;
-              w1[3]  = 0;
+    case  3:  buf0[3] &= tmp;
+              buf1[0]  = 0;
+              buf1[1]  = 0;
+              buf1[2]  = 0;
+              buf1[3]  = 0;
               break;
-    case  4:  w1[0] &= tmp;
-              w1[1]  = 0;
-              w1[2]  = 0;
-              w1[3]  = 0;
+    case  4:  buf1[0] &= tmp;
+              buf1[1]  = 0;
+              buf1[2]  = 0;
+              buf1[3]  = 0;
               break;
-    case  5:  w1[1] &= tmp;
-              w1[2]  = 0;
-              w1[3]  = 0;
+    case  5:  buf1[1] &= tmp;
+              buf1[2]  = 0;
+              buf1[3]  = 0;
               break;
-    case  6:  w1[2] &= tmp;
-              w1[3]  = 0;
+    case  6:  buf1[2] &= tmp;
+              buf1[3]  = 0;
               break;
-    case  7:  w1[3] &= tmp;
+    case  7:  buf1[3] &= tmp;
               break;
   }
 }
 
-static void truncate_left (u32 w0[4], u32 w1[4], const u32 len)
+static void truncate_left (u32 buf0[4], u32 buf1[4], const u32 offset)
 {
-  const u32 tmp = ~((1u << ((len % 4) * 8)) - 1);
+  const u32 tmp = ~((1u << ((offset & 3u) * 8u)) - 1u);
 
-  switch (len / 4)
+  switch (offset / 4)
   {
-    case  0:  w0[0] &= tmp;
+    case  0:  buf0[0] &= tmp;
               break;
-    case  1:  w0[0]  = 0;
-              w0[1] &= tmp;
+    case  1:  buf0[0]  = 0;
+              buf0[1] &= tmp;
               break;
-    case  2:  w0[0]  = 0;
-              w0[1]  = 0;
-              w0[2] &= tmp;
+    case  2:  buf0[0]  = 0;
+              buf0[1]  = 0;
+              buf0[2] &= tmp;
               break;
-    case  3:  w0[0]  = 0;
-              w0[1]  = 0;
-              w0[2]  = 0;
-              w0[3] &= tmp;
+    case  3:  buf0[0]  = 0;
+              buf0[1]  = 0;
+              buf0[2]  = 0;
+              buf0[3] &= tmp;
               break;
-    case  4:  w0[0]  = 0;
-              w0[1]  = 0;
-              w0[2]  = 0;
-              w0[3]  = 0;
-              w1[0] &= tmp;
+    case  4:  buf0[0]  = 0;
+              buf0[1]  = 0;
+              buf0[2]  = 0;
+              buf0[3]  = 0;
+              buf1[0] &= tmp;
               break;
-    case  5:  w0[0]  = 0;
-              w0[1]  = 0;
-              w0[2]  = 0;
-              w0[3]  = 0;
-              w1[0]  = 0;
-              w1[1] &= tmp;
+    case  5:  buf0[0]  = 0;
+              buf0[1]  = 0;
+              buf0[2]  = 0;
+              buf0[3]  = 0;
+              buf1[0]  = 0;
+              buf1[1] &= tmp;
               break;
-    case  6:  w0[0]  = 0;
-              w0[1]  = 0;
-              w0[2]  = 0;
-              w0[3]  = 0;
-              w1[0]  = 0;
-              w1[1]  = 0;
-              w1[2] &= tmp;
+    case  6:  buf0[0]  = 0;
+              buf0[1]  = 0;
+              buf0[2]  = 0;
+              buf0[3]  = 0;
+              buf1[0]  = 0;
+              buf1[1]  = 0;
+              buf1[2] &= tmp;
               break;
-    case  7:  w0[0]  = 0;
-              w0[1]  = 0;
-              w0[2]  = 0;
-              w0[3]  = 0;
-              w1[0]  = 0;
-              w1[1]  = 0;
-              w1[2]  = 0;
-              w1[3] &= tmp;
+    case  7:  buf0[0]  = 0;
+              buf0[1]  = 0;
+              buf0[2]  = 0;
+              buf0[3]  = 0;
+              buf1[0]  = 0;
+              buf1[1]  = 0;
+              buf1[2]  = 0;
+              buf1[3] &= tmp;
               break;
   }
 }
@@ -749,297 +753,162 @@ static void lshift_block_N (const u32 in0[4], const u32 in1[4], u32 out0[4], u32
   }
 }
 
-static void append_block1 (const u32 offset, u32 dst0[4], u32 dst1[4], const u32 src_r0)
+static void append_block1 (const u32 offset, u32 buf0[4], u32 buf1[4], const u32 src_r0)
 {
-  u32 tmp[2] = { 0 };
+  // this version works with 1 byte append only
 
-  switch (offset & 3)
-  {
-    case  0:  tmp[0] = src_r0;
-              tmp[1] = 0;
-              break;
-    case  1:  tmp[0] = src_r0 <<  8;
-              tmp[1] = src_r0 >> 24;
-              break;
-    case  2:  tmp[0] = src_r0 << 16;
-              tmp[1] = src_r0 >> 16;
-              break;
-    case  3:  tmp[0] = src_r0 << 24;
-              tmp[1] = src_r0 >>  8;
-              break;
-  }
+  const u32 value = src_r0 & 0xff;
+
+  const u32 shift = (offset & 3) * 8;
+
+  const u32 tmp = value << shift;
+
+  buf0[0] |=                    (offset <  4)  ? tmp : 0;
+  buf0[1] |= ((offset >=  4) && (offset <  8)) ? tmp : 0;
+  buf0[2] |= ((offset >=  8) && (offset < 12)) ? tmp : 0;
+  buf0[3] |= ((offset >= 12) && (offset < 16)) ? tmp : 0;
+  buf1[0] |= ((offset >= 16) && (offset < 20)) ? tmp : 0;
+  buf1[1] |= ((offset >= 20) && (offset < 24)) ? tmp : 0;
+  buf1[2] |= ((offset >= 24) && (offset < 28)) ? tmp : 0;
+  buf1[3] |=  (offset >= 28)                   ? tmp : 0;
+}
+
+static void append_block8 (const u32 offset, u32 buf0[4], u32 buf1[4], const u32 src_l0[4], const u32 src_l1[4], const u32 src_r0[4], const u32 src_r1[4])
+{
+  const int offset_mod_4 = offset & 3;
+
+  const int offset_minus_4 = 4 - offset;
+
+  u32 s0 = 0;
+  u32 s1 = 0;
+  u32 s2 = 0;
+  u32 s3 = 0;
+  u32 s4 = 0;
+  u32 s5 = 0;
+  u32 s6 = 0;
+  u32 s7 = 0;
+  u32 s8 = 0;
 
   switch (offset / 4)
   {
-    case  0:  dst0[0] |= tmp[0];
-              dst0[1]  = tmp[1];
-              break;
-    case  1:  dst0[1] |= tmp[0];
-              dst0[2]  = tmp[1];
-              break;
-    case  2:  dst0[2] |= tmp[0];
-              dst0[3]  = tmp[1];
-              break;
-    case  3:  dst0[3] |= tmp[0];
-              dst1[0]  = tmp[1];
-              break;
-    case  4:  dst1[0] |= tmp[0];
-              dst1[1]  = tmp[1];
-              break;
-    case  5:  dst1[1] |= tmp[0];
-              dst1[2]  = tmp[1];
-              break;
-    case  6:  dst1[2] |= tmp[0];
-              dst1[3]  = tmp[1];
-              break;
-    case  7:  dst1[3] |= tmp[0];
-              break;
-  }
-}
-
-static void append_block8 (const u32 offset, u32 dst0[4], u32 dst1[4], const u32 src_l0[4], const u32 src_l1[4], const u32 src_r0[4], const u32 src_r1[4])
-{
-  switch (offset)
-  {
     case 0:
-      dst0[0] = src_r0[0];
-      dst0[1] = src_r0[1];
-      dst0[2] = src_r0[2];
-      dst0[3] = src_r0[3];
-      dst1[0] = src_r1[0];
-      dst1[1] = src_r1[1];
-      dst1[2] = src_r1[2];
-      dst1[3] = src_r1[3];
+      s8 = amd_bytealign (        0, src_r1[3], offset_minus_4);
+      s7 = amd_bytealign (src_r1[3], src_r1[2], offset_minus_4);
+      s6 = amd_bytealign (src_r1[2], src_r1[1], offset_minus_4);
+      s5 = amd_bytealign (src_r1[1], src_r1[0], offset_minus_4);
+      s4 = amd_bytealign (src_r1[0], src_r0[3], offset_minus_4);
+      s3 = amd_bytealign (src_r0[3], src_r0[2], offset_minus_4);
+      s2 = amd_bytealign (src_r0[2], src_r0[1], offset_minus_4);
+      s1 = amd_bytealign (src_r0[1], src_r0[0], offset_minus_4);
+      s0 = amd_bytealign (src_r0[0],         0, offset_minus_4);
       break;
 
     case 1:
-      dst0[0] = src_l0[0]       | src_r0[0] <<  8;
-      dst0[1] = src_r0[0] >> 24 | src_r0[1] <<  8;
-      dst0[2] = src_r0[1] >> 24 | src_r0[2] <<  8;
-      dst0[3] = src_r0[2] >> 24 | src_r0[3] <<  8;
-      dst1[0] = src_r0[3] >> 24 | src_r1[0] <<  8;
-      dst1[1] = src_r1[0] >> 24 | src_r1[1] <<  8;
-      dst1[2] = src_r1[1] >> 24 | src_r1[2] <<  8;
-      dst1[3] = src_r1[2] >> 24 | src_r1[3] <<  8;
+      s8 = amd_bytealign (        0, src_r1[2], offset_minus_4);
+      s7 = amd_bytealign (src_r1[2], src_r1[1], offset_minus_4);
+      s6 = amd_bytealign (src_r1[1], src_r1[0], offset_minus_4);
+      s5 = amd_bytealign (src_r1[0], src_r0[3], offset_minus_4);
+      s4 = amd_bytealign (src_r0[3], src_r0[2], offset_minus_4);
+      s3 = amd_bytealign (src_r0[2], src_r0[1], offset_minus_4);
+      s2 = amd_bytealign (src_r0[1], src_r0[0], offset_minus_4);
+      s1 = amd_bytealign (src_r0[0],         0, offset_minus_4);
+      s0 = 0;
       break;
 
     case 2:
-      dst0[0] = src_l0[0]       | src_r0[0] << 16;
-      dst0[1] = src_r0[0] >> 16 | src_r0[1] << 16;
-      dst0[2] = src_r0[1] >> 16 | src_r0[2] << 16;
-      dst0[3] = src_r0[2] >> 16 | src_r0[3] << 16;
-      dst1[0] = src_r0[3] >> 16 | src_r1[0] << 16;
-      dst1[1] = src_r1[0] >> 16 | src_r1[1] << 16;
-      dst1[2] = src_r1[1] >> 16 | src_r1[2] << 16;
-      dst1[3] = src_r1[2] >> 16 | src_r1[3] << 16;
+      s8 = amd_bytealign (        0, src_r1[1], offset_minus_4);
+      s7 = amd_bytealign (src_r1[1], src_r1[0], offset_minus_4);
+      s6 = amd_bytealign (src_r1[0], src_r0[3], offset_minus_4);
+      s5 = amd_bytealign (src_r0[3], src_r0[2], offset_minus_4);
+      s4 = amd_bytealign (src_r0[2], src_r0[1], offset_minus_4);
+      s3 = amd_bytealign (src_r0[1], src_r0[0], offset_minus_4);
+      s2 = amd_bytealign (src_r0[0],         0, offset_minus_4);
+      s1 = 0;
+      s0 = 0;
       break;
 
     case 3:
-      dst0[0] = src_l0[0]       | src_r0[0] << 24;
-      dst0[1] = src_r0[0] >>  8 | src_r0[1] << 24;
-      dst0[2] = src_r0[1] >>  8 | src_r0[2] << 24;
-      dst0[3] = src_r0[2] >>  8 | src_r0[3] << 24;
-      dst1[0] = src_r0[3] >>  8 | src_r1[0] << 24;
-      dst1[1] = src_r1[0] >>  8 | src_r1[1] << 24;
-      dst1[2] = src_r1[1] >>  8 | src_r1[2] << 24;
-      dst1[3] = src_r1[2] >>  8 | src_r1[3] << 24;
+      s8 = amd_bytealign (        0, src_r1[0], offset_minus_4);
+      s7 = amd_bytealign (src_r1[0], src_r0[3], offset_minus_4);
+      s6 = amd_bytealign (src_r0[3], src_r0[2], offset_minus_4);
+      s5 = amd_bytealign (src_r0[2], src_r0[1], offset_minus_4);
+      s4 = amd_bytealign (src_r0[1], src_r0[0], offset_minus_4);
+      s3 = amd_bytealign (src_r0[0],         0, offset_minus_4);
+      s2 = 0;
+      s1 = 0;
+      s0 = 0;
       break;
 
     case 4:
-      dst0[1] = src_r0[0];
-      dst0[2] = src_r0[1];
-      dst0[3] = src_r0[2];
-      dst1[0] = src_r0[3];
-      dst1[1] = src_r1[0];
-      dst1[2] = src_r1[1];
-      dst1[3] = src_r1[2];
+      s8 = amd_bytealign (        0, src_r0[3], offset_minus_4);
+      s7 = amd_bytealign (src_r0[3], src_r0[2], offset_minus_4);
+      s6 = amd_bytealign (src_r0[2], src_r0[1], offset_minus_4);
+      s5 = amd_bytealign (src_r0[1], src_r0[0], offset_minus_4);
+      s4 = amd_bytealign (src_r0[0],         0, offset_minus_4);
+      s3 = 0;
+      s2 = 0;
+      s1 = 0;
+      s0 = 0;
       break;
 
     case 5:
-      dst0[1] = src_l0[1]       | src_r0[0] <<  8;
-      dst0[2] = src_r0[0] >> 24 | src_r0[1] <<  8;
-      dst0[3] = src_r0[1] >> 24 | src_r0[2] <<  8;
-      dst1[0] = src_r0[2] >> 24 | src_r0[3] <<  8;
-      dst1[1] = src_r0[3] >> 24 | src_r1[0] <<  8;
-      dst1[2] = src_r1[0] >> 24 | src_r1[1] <<  8;
-      dst1[3] = src_r1[1] >> 24 | src_r1[2] <<  8;
+      s8 = amd_bytealign (        0, src_r0[2], offset_minus_4);
+      s7 = amd_bytealign (src_r0[2], src_r0[1], offset_minus_4);
+      s6 = amd_bytealign (src_r0[1], src_r0[0], offset_minus_4);
+      s5 = amd_bytealign (src_r0[0],         0, offset_minus_4);
+      s4 = 0;
+      s3 = 0;
+      s2 = 0;
+      s1 = 0;
+      s0 = 0;
       break;
 
     case 6:
-      dst0[1] = src_l0[1]       | src_r0[0] << 16;
-      dst0[2] = src_r0[0] >> 16 | src_r0[1] << 16;
-      dst0[3] = src_r0[1] >> 16 | src_r0[2] << 16;
-      dst1[0] = src_r0[2] >> 16 | src_r0[3] << 16;
-      dst1[1] = src_r0[3] >> 16 | src_r1[0] << 16;
-      dst1[2] = src_r1[0] >> 16 | src_r1[1] << 16;
-      dst1[3] = src_r1[1] >> 16 | src_r1[2] << 16;
+      s8 = amd_bytealign (        0, src_r0[1], offset_minus_4);
+      s7 = amd_bytealign (src_r0[1], src_r0[0], offset_minus_4);
+      s6 = amd_bytealign (src_r0[0],         0, offset_minus_4);
+      s5 = 0;
+      s4 = 0;
+      s3 = 0;
+      s2 = 0;
+      s1 = 0;
+      s0 = 0;
       break;
 
     case 7:
-      dst0[1] = src_l0[1]       | src_r0[0] << 24;
-      dst0[2] = src_r0[0] >>  8 | src_r0[1] << 24;
-      dst0[3] = src_r0[1] >>  8 | src_r0[2] << 24;
-      dst1[0] = src_r0[2] >>  8 | src_r0[3] << 24;
-      dst1[1] = src_r0[3] >>  8 | src_r1[0] << 24;
-      dst1[2] = src_r1[0] >>  8 | src_r1[1] << 24;
-      dst1[3] = src_r1[1] >>  8 | src_r1[2] << 24;
+      s8 = amd_bytealign (        0, src_r0[0], offset_minus_4);
+      s7 = amd_bytealign (src_r0[0],         0, offset_minus_4);
+      s6 = 0;
+      s5 = 0;
+      s4 = 0;
+      s3 = 0;
+      s2 = 0;
+      s1 = 0;
+      s0 = 0;
       break;
+  }
 
-    case 8:
-      dst0[2] = src_r0[0];
-      dst0[3] = src_r0[1];
-      dst1[0] = src_r0[2];
-      dst1[1] = src_r0[3];
-      dst1[2] = src_r1[0];
-      dst1[3] = src_r1[1];
-      break;
-
-    case 9:
-      dst0[2] = src_l0[2]       | src_r0[0] <<  8;
-      dst0[3] = src_r0[0] >> 24 | src_r0[1] <<  8;
-      dst1[0] = src_r0[1] >> 24 | src_r0[2] <<  8;
-      dst1[1] = src_r0[2] >> 24 | src_r0[3] <<  8;
-      dst1[2] = src_r0[3] >> 24 | src_r1[0] <<  8;
-      dst1[3] = src_r1[0] >> 24 | src_r1[1] <<  8;
-      break;
-
-    case 10:
-      dst0[2] = src_l0[2]       | src_r0[0] << 16;
-      dst0[3] = src_r0[0] >> 16 | src_r0[1] << 16;
-      dst1[0] = src_r0[1] >> 16 | src_r0[2] << 16;
-      dst1[1] = src_r0[2] >> 16 | src_r0[3] << 16;
-      dst1[2] = src_r0[3] >> 16 | src_r1[0] << 16;
-      dst1[3] = src_r1[0] >> 16 | src_r1[1] << 16;
-      break;
-
-    case 11:
-      dst0[2] = src_l0[2]       | src_r0[0] << 24;
-      dst0[3] = src_r0[0] >>  8 | src_r0[1] << 24;
-      dst1[0] = src_r0[1] >>  8 | src_r0[2] << 24;
-      dst1[1] = src_r0[2] >>  8 | src_r0[3] << 24;
-      dst1[2] = src_r0[3] >>  8 | src_r1[0] << 24;
-      dst1[3] = src_r1[0] >>  8 | src_r1[1] << 24;
-      break;
-
-    case 12:
-      dst0[3] = src_r0[0];
-      dst1[0] = src_r0[1];
-      dst1[1] = src_r0[2];
-      dst1[2] = src_r0[3];
-      dst1[3] = src_r1[0];
-      break;
-
-    case 13:
-      dst0[3] = src_l0[3]       | src_r0[0] <<  8;
-      dst1[0] = src_r0[0] >> 24 | src_r0[1] <<  8;
-      dst1[1] = src_r0[1] >> 24 | src_r0[2] <<  8;
-      dst1[2] = src_r0[2] >> 24 | src_r0[3] <<  8;
-      dst1[3] = src_r0[3] >> 24 | src_r1[0] <<  8;
-      break;
-
-    case 14:
-      dst0[3] = src_l0[3]       | src_r0[0] << 16;
-      dst1[0] = src_r0[0] >> 16 | src_r0[1] << 16;
-      dst1[1] = src_r0[1] >> 16 | src_r0[2] << 16;
-      dst1[2] = src_r0[2] >> 16 | src_r0[3] << 16;
-      dst1[3] = src_r0[3] >> 16 | src_r1[0] << 16;
-      break;
-
-    case 15:
-      dst0[3] = src_l0[3]       | src_r0[0] << 24;
-      dst1[0] = src_r0[0] >>  8 | src_r0[1] << 24;
-      dst1[1] = src_r0[1] >>  8 | src_r0[2] << 24;
-      dst1[2] = src_r0[2] >>  8 | src_r0[3] << 24;
-      dst1[3] = src_r0[3] >>  8 | src_r1[0] << 24;
-      break;
-
-    case 16:
-      dst1[0] = src_r0[0];
-      dst1[1] = src_r0[1];
-      dst1[2] = src_r0[2];
-      dst1[3] = src_r0[3];
-      break;
-
-    case 17:
-      dst1[0] = src_l1[0]       | src_r0[0] <<  8;
-      dst1[1] = src_r0[0] >> 24 | src_r0[1] <<  8;
-      dst1[2] = src_r0[1] >> 24 | src_r0[2] <<  8;
-      dst1[3] = src_r0[2] >> 24 | src_r0[3] <<  8;
-      break;
-
-    case 18:
-      dst1[0] = src_l1[0]       | src_r0[0] << 16;
-      dst1[1] = src_r0[0] >> 16 | src_r0[1] << 16;
-      dst1[2] = src_r0[1] >> 16 | src_r0[2] << 16;
-      dst1[3] = src_r0[2] >> 16 | src_r0[3] << 16;
-      break;
-
-    case 19:
-      dst1[0] = src_l1[0]       | src_r0[0] << 24;
-      dst1[1] = src_r0[0] >>  8 | src_r0[1] << 24;
-      dst1[2] = src_r0[1] >>  8 | src_r0[2] << 24;
-      dst1[3] = src_r0[2] >>  8 | src_r0[3] << 24;
-      break;
-
-    case 20:
-      dst1[1] = src_r0[0];
-      dst1[2] = src_r0[1];
-      dst1[3] = src_r0[2];
-      break;
-
-    case 21:
-      dst1[1] = src_l1[1]       | src_r0[0] <<  8;
-      dst1[2] = src_r0[0] >> 24 | src_r0[1] <<  8;
-      dst1[3] = src_r0[1] >> 24 | src_r0[2] <<  8;
-      break;
-
-    case 22:
-      dst1[1] = src_l1[1]       | src_r0[0] << 16;
-      dst1[2] = src_r0[0] >> 16 | src_r0[1] << 16;
-      dst1[3] = src_r0[1] >> 16 | src_r0[2] << 16;
-      break;
-
-    case 23:
-      dst1[1] = src_l1[1]       | src_r0[0] << 24;
-      dst1[2] = src_r0[0] >>  8 | src_r0[1] << 24;
-      dst1[3] = src_r0[1] >>  8 | src_r0[2] << 24;
-      break;
-
-    case 24:
-      dst1[2] = src_r0[0];
-      dst1[3] = src_r0[1];
-      break;
-
-    case 25:
-      dst1[2] = src_l1[2]       | src_r0[0] <<  8;
-      dst1[3] = src_r0[0] >> 24 | src_r0[1] <<  8;
-      break;
-
-    case 26:
-      dst1[2] = src_l1[2]       | src_r0[0] << 16;
-      dst1[3] = src_r0[0] >> 16 | src_r0[1] << 16;
-      break;
-
-    case 27:
-      dst1[2] = src_l1[2]       | src_r0[0] << 24;
-      dst1[3] = src_r0[0] >>  8 | src_r0[1] << 24;
-      break;
-
-    case 28:
-      dst1[3] = src_r0[0];
-      break;
-
-    case 29:
-      dst1[3] = src_l1[3]       | src_r0[0] <<  8;
-      break;
-
-    case 30:
-      dst1[3] = src_l1[3]       | src_r0[0] << 16;
-      break;
-
-    case 31:
-      dst1[3] = src_l1[3]       | src_r0[0] << 24;
-      break;
+  if (offset_mod_4 == 0)
+  {
+    buf0[0] = src_l0[0] | s1;
+    buf0[1] = src_l0[1] | s2;
+    buf0[2] = src_l0[2] | s3;
+    buf0[3] = src_l0[3] | s4;
+    buf1[0] = src_l1[0] | s5;
+    buf1[1] = src_l1[1] | s6;
+    buf1[2] = src_l1[2] | s7;
+    buf1[3] = src_l1[3] | s8;
+  }
+  else
+  {
+    buf0[0] = src_l0[0] | s0;
+    buf0[1] = src_l0[1] | s1;
+    buf0[2] = src_l0[2] | s2;
+    buf0[3] = src_l0[3] | s3;
+    buf1[0] = src_l1[0] | s4;
+    buf1[1] = src_l1[1] | s5;
+    buf1[2] = src_l1[2] | s6;
+    buf1[3] = src_l1[3] | s7;
   }
 }
 
@@ -1059,17 +928,17 @@ static void reverse_block (u32 in0[4], u32 in1[4], u32 out0[4], u32 out1[4], con
   tib41[2] = out0[1];
   tib41[3] = out0[0];
 
-  out0[0] = swap_workaround (tib40[0]);
-  out0[1] = swap_workaround (tib40[1]);
-  out0[2] = swap_workaround (tib40[2]);
-  out0[3] = swap_workaround (tib40[3]);
-  out1[0] = swap_workaround (tib41[0]);
-  out1[1] = swap_workaround (tib41[1]);
-  out1[2] = swap_workaround (tib41[2]);
-  out1[3] = swap_workaround (tib41[3]);
+  out0[0] = swap32_S (tib40[0]);
+  out0[1] = swap32_S (tib40[1]);
+  out0[2] = swap32_S (tib40[2]);
+  out0[3] = swap32_S (tib40[3]);
+  out1[0] = swap32_S (tib41[0]);
+  out1[1] = swap32_S (tib41[1]);
+  out1[2] = swap32_S (tib41[2]);
+  out1[3] = swap32_S (tib41[3]);
 }
 
-static u32 rule_op_mangle_lrest (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_lrest (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   buf0[0] |= (generate_cmask (buf0[0]));
   buf0[1] |= (generate_cmask (buf0[1]));
@@ -1083,7 +952,7 @@ static u32 rule_op_mangle_lrest (const u32 p0, const u32 p1, u32 buf0[4], u32 bu
   return in_len;
 }
 
-static u32 rule_op_mangle_urest (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_urest (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   buf0[0] &= ~(generate_cmask (buf0[0]));
   buf0[1] &= ~(generate_cmask (buf0[1]));
@@ -1097,7 +966,7 @@ static u32 rule_op_mangle_urest (const u32 p0, const u32 p1, u32 buf0[4], u32 bu
   return in_len;
 }
 
-static u32 rule_op_mangle_lrest_ufirst (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_lrest_ufirst (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   rule_op_mangle_lrest (p0, p1, buf0, buf1, in_len);
 
@@ -1106,7 +975,7 @@ static u32 rule_op_mangle_lrest_ufirst (const u32 p0, const u32 p1, u32 buf0[4],
   return in_len;
 }
 
-static u32 rule_op_mangle_urest_lfirst (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_urest_lfirst (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   rule_op_mangle_urest (p0, p1, buf0, buf1, in_len);
 
@@ -1115,7 +984,7 @@ static u32 rule_op_mangle_urest_lfirst (const u32 p0, const u32 p1, u32 buf0[4],
   return in_len;
 }
 
-static u32 rule_op_mangle_trest (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_trest (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   buf0[0] ^= (generate_cmask (buf0[0]));
   buf0[1] ^= (generate_cmask (buf0[1]));
@@ -1129,7 +998,7 @@ static u32 rule_op_mangle_trest (const u32 p0, const u32 p1, u32 buf0[4], u32 bu
   return in_len;
 }
 
-static u32 rule_op_mangle_toggle_at (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_toggle_at (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -1150,14 +1019,14 @@ static u32 rule_op_mangle_toggle_at (const u32 p0, const u32 p1, u32 buf0[4], u3
   return in_len;
 }
 
-static u32 rule_op_mangle_reverse (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_reverse (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   reverse_block (buf0, buf1, buf0, buf1, in_len);
 
   return in_len;
 }
 
-static u32 rule_op_mangle_dupeword (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_dupeword (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if ((in_len + in_len) >= 32) return (in_len);
 
@@ -1182,7 +1051,7 @@ static u32 rule_op_mangle_dupeword (const u32 p0, const u32 p1, u32 buf0[4], u32
   return out_len;
 }
 
-static u32 rule_op_mangle_dupeword_times (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_dupeword_times (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (((in_len * p0) + in_len) >= 32) return (in_len);
 
@@ -1210,14 +1079,14 @@ static u32 rule_op_mangle_dupeword_times (const u32 p0, const u32 p1, u32 buf0[4
   return out_len;
 }
 
-static u32 rule_op_mangle_reflect (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_reflect (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if ((in_len + in_len) >= 32) return (in_len);
 
   u32 out_len = in_len;
 
-  u32 tib40[4];
-  u32 tib41[4];
+  u32 tib40[4] = { 0 };
+  u32 tib41[4] = { 0 };
 
   reverse_block (buf0, buf1, tib40, tib41, out_len);
 
@@ -1228,7 +1097,7 @@ static u32 rule_op_mangle_reflect (const u32 p0, const u32 p1, u32 buf0[4], u32 
   return out_len;
 }
 
-static u32 rule_op_mangle_append (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_append (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if ((in_len + 1) >= 32) return (in_len);
 
@@ -1241,7 +1110,7 @@ static u32 rule_op_mangle_append (const u32 p0, const u32 p1, u32 buf0[4], u32 b
   return out_len;
 }
 
-static u32 rule_op_mangle_prepend (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_prepend (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if ((in_len + 1) >= 32) return (in_len);
 
@@ -1256,7 +1125,7 @@ static u32 rule_op_mangle_prepend (const u32 p0, const u32 p1, u32 buf0[4], u32 
   return out_len;
 }
 
-static u32 rule_op_mangle_rotate_left (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_rotate_left (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (in_len == 0) return (in_len);
 
@@ -1268,22 +1137,19 @@ static u32 rule_op_mangle_rotate_left (const u32 p0, const u32 p1, u32 buf0[4], 
 
   lshift_block (buf0, buf1, buf0, buf1);
 
-  switch (in_len1 / 4)
-  {
-    case  0:  buf0[0] |= tmp; break;
-    case  1:  buf0[1] |= tmp; break;
-    case  2:  buf0[2] |= tmp; break;
-    case  3:  buf0[3] |= tmp; break;
-    case  4:  buf1[0] |= tmp; break;
-    case  5:  buf1[1] |= tmp; break;
-    case  6:  buf1[2] |= tmp; break;
-    case  7:  buf1[3] |= tmp; break;
-  }
+  buf0[0] |=                     (in_len1 <  4)  ? tmp : 0;
+  buf0[1] |= ((in_len1 >=  4) && (in_len1 <  8)) ? tmp : 0;
+  buf0[2] |= ((in_len1 >=  8) && (in_len1 < 12)) ? tmp : 0;
+  buf0[3] |= ((in_len1 >= 12) && (in_len1 < 16)) ? tmp : 0;
+  buf1[0] |= ((in_len1 >= 16) && (in_len1 < 20)) ? tmp : 0;
+  buf1[1] |= ((in_len1 >= 20) && (in_len1 < 24)) ? tmp : 0;
+  buf1[2] |= ((in_len1 >= 24) && (in_len1 < 28)) ? tmp : 0;
+  buf1[3] |=  (in_len1 >= 28)                    ? tmp : 0;
 
   return in_len;
 }
 
-static u32 rule_op_mangle_rotate_right (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_rotate_right (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
 {
   if (in_len == 0) return (in_len);
 
@@ -1293,17 +1159,16 @@ static u32 rule_op_mangle_rotate_right (const u32 p0, const u32 p1, u32 buf0[4],
 
   u32 tmp = 0;
 
-  switch (in_len1 / 4)
-  {
-    case  0:  tmp = (buf0[0] >> sh) & 0xff; break;
-    case  1:  tmp = (buf0[1] >> sh) & 0xff; break;
-    case  2:  tmp = (buf0[2] >> sh) & 0xff; break;
-    case  3:  tmp = (buf0[3] >> sh) & 0xff; break;
-    case  4:  tmp = (buf1[0] >> sh) & 0xff; break;
-    case  5:  tmp = (buf1[1] >> sh) & 0xff; break;
-    case  6:  tmp = (buf1[2] >> sh) & 0xff; break;
-    case  7:  tmp = (buf1[3] >> sh) & 0xff; break;
-  }
+  tmp |=                     (in_len1 <  4)  ? buf0[0] : 0;
+  tmp |= ((in_len1 >=  4) && (in_len1 <  8)) ? buf0[1] : 0;
+  tmp |= ((in_len1 >=  8) && (in_len1 < 12)) ? buf0[2] : 0;
+  tmp |= ((in_len1 >= 12) && (in_len1 < 16)) ? buf0[3] : 0;
+  tmp |= ((in_len1 >= 16) && (in_len1 < 20)) ? buf1[0] : 0;
+  tmp |= ((in_len1 >= 20) && (in_len1 < 24)) ? buf1[1] : 0;
+  tmp |= ((in_len1 >= 24) && (in_len1 < 28)) ? buf1[2] : 0;
+  tmp |=  (in_len1 >= 28)                    ? buf1[3] : 0;
+
+  tmp = (tmp >> sh) & 0xff;
 
   rshift_block (buf0, buf1, buf0, buf1);
 
@@ -1314,7 +1179,7 @@ static u32 rule_op_mangle_rotate_right (const u32 p0, const u32 p1, u32 buf0[4],
   return in_len;
 }
 
-static u32 rule_op_mangle_delete_first (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_delete_first (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (in_len == 0) return (in_len);
 
@@ -1325,30 +1190,27 @@ static u32 rule_op_mangle_delete_first (const u32 p0, const u32 p1, u32 buf0[4],
   return in_len1;
 }
 
-static u32 rule_op_mangle_delete_last (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_delete_last (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (in_len == 0) return (in_len);
 
   const u32 in_len1 = in_len - 1;
 
-  const u32 tmp = (1u << ((in_len1 & 3) * 8)) - 1;
+  const u32 mask = (1 << ((in_len1 & 3) * 8)) - 1;
 
-  switch (in_len1 / 4)
-  {
-    case  0:  buf0[0] &= tmp; break;
-    case  1:  buf0[1] &= tmp; break;
-    case  2:  buf0[2] &= tmp; break;
-    case  3:  buf0[3] &= tmp; break;
-    case  4:  buf1[0] &= tmp; break;
-    case  5:  buf1[1] &= tmp; break;
-    case  6:  buf1[2] &= tmp; break;
-    case  7:  buf1[3] &= tmp; break;
-  }
+  buf0[0] &=                     (in_len1 <  4)  ? mask : 0xffffffff;
+  buf0[1] &= ((in_len1 >=  4) && (in_len1 <  8)) ? mask : 0xffffffff;
+  buf0[2] &= ((in_len1 >=  8) && (in_len1 < 12)) ? mask : 0xffffffff;
+  buf0[3] &= ((in_len1 >= 12) && (in_len1 < 16)) ? mask : 0xffffffff;
+  buf1[0] &= ((in_len1 >= 16) && (in_len1 < 20)) ? mask : 0xffffffff;
+  buf1[1] &= ((in_len1 >= 20) && (in_len1 < 24)) ? mask : 0xffffffff;
+  buf1[2] &= ((in_len1 >= 24) && (in_len1 < 28)) ? mask : 0xffffffff;
+  buf1[3] &=  (in_len1 >= 28)                    ? mask : 0xffffffff;
 
   return in_len1;
 }
 
-static u32 rule_op_mangle_delete_at (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_delete_at (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -1423,7 +1285,7 @@ static u32 rule_op_mangle_delete_at (const u32 p0, const u32 p1, u32 buf0[4], u3
   return out_len;
 }
 
-static u32 rule_op_mangle_extract (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_extract (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -1438,7 +1300,7 @@ static u32 rule_op_mangle_extract (const u32 p0, const u32 p1, u32 buf0[4], u32 
   return out_len;
 }
 
-static u32 rule_op_mangle_omit (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_omit (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -1524,7 +1386,7 @@ static u32 rule_op_mangle_omit (const u32 p0, const u32 p1, u32 buf0[4], u32 buf
   return out_len;
 }
 
-static u32 rule_op_mangle_insert (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_insert (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 > in_len) return (in_len);
 
@@ -1596,7 +1458,7 @@ static u32 rule_op_mangle_insert (const u32 p0, const u32 p1, u32 buf0[4], u32 b
   return out_len;
 }
 
-static u32 rule_op_mangle_overstrike (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_overstrike (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -1619,7 +1481,7 @@ static u32 rule_op_mangle_overstrike (const u32 p0, const u32 p1, u32 buf0[4], u
   return in_len;
 }
 
-static u32 rule_op_mangle_truncate_at (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_truncate_at (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -1628,7 +1490,7 @@ static u32 rule_op_mangle_truncate_at (const u32 p0, const u32 p1, u32 buf0[4], 
   return p0;
 }
 
-static u32 rule_op_mangle_replace (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_replace (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   for (u32 i = 0; i < in_len; i++)
   {
@@ -1672,11 +1534,11 @@ static u32 rule_op_mangle_replace (const u32 p0, const u32 p1, u32 buf0[4], u32 
   return in_len;
 }
 
-static u32 rule_op_mangle_purgechar (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_purgechar (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   u32 out_len = 0;
 
-  u32 buf_in[8];
+  u32 buf_in[8] = { 0 };
 
   buf_in[0] = buf0[0];
   buf_in[1] = buf0[1];
@@ -1714,14 +1576,14 @@ static u32 rule_op_mangle_purgechar (const u32 p0, const u32 p1, u32 buf0[4], u3
 }
 
 /*
-static u32 rule_op_mangle_togglecase_rec (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_togglecase_rec (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   // TODO
   return in_len;
 }
 */
 
-static u32 rule_op_mangle_dupechar_first (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_dupechar_first (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if ( in_len       ==  0) return (in_len);
   if ((in_len + p0) >= 32) return (in_len);
@@ -1908,7 +1770,7 @@ static u32 rule_op_mangle_dupechar_first (const u32 p0, const u32 p1, u32 buf0[4
   return out_len;
 }
 
-static u32 rule_op_mangle_dupechar_last (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_dupechar_last (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if ( in_len       ==  0) return (in_len);
   if ((in_len + p0) >= 32) return (in_len);
@@ -1919,17 +1781,16 @@ static u32 rule_op_mangle_dupechar_last (const u32 p0, const u32 p1, u32 buf0[4]
 
   u32 tmp = 0;
 
-  switch (in_len1 / 4)
-  {
-    case  0:  tmp = (buf0[0] >> sh) & 0xff; break;
-    case  1:  tmp = (buf0[1] >> sh) & 0xff; break;
-    case  2:  tmp = (buf0[2] >> sh) & 0xff; break;
-    case  3:  tmp = (buf0[3] >> sh) & 0xff; break;
-    case  4:  tmp = (buf1[0] >> sh) & 0xff; break;
-    case  5:  tmp = (buf1[1] >> sh) & 0xff; break;
-    case  6:  tmp = (buf1[2] >> sh) & 0xff; break;
-    case  7:  tmp = (buf1[3] >> sh) & 0xff; break;
-  }
+  tmp |=                     (in_len1 <  4)  ? buf0[0] : 0;
+  tmp |= ((in_len1 >=  4) && (in_len1 <  8)) ? buf0[1] : 0;
+  tmp |= ((in_len1 >=  8) && (in_len1 < 12)) ? buf0[2] : 0;
+  tmp |= ((in_len1 >= 12) && (in_len1 < 16)) ? buf0[3] : 0;
+  tmp |= ((in_len1 >= 16) && (in_len1 < 20)) ? buf1[0] : 0;
+  tmp |= ((in_len1 >= 20) && (in_len1 < 24)) ? buf1[1] : 0;
+  tmp |= ((in_len1 >= 24) && (in_len1 < 28)) ? buf1[2] : 0;
+  tmp |=  (in_len1 >= 28)                    ? buf1[3] : 0;
+
+  tmp = (tmp >> sh) & 0xff;
 
   u32 out_len = in_len;
 
@@ -1943,7 +1804,7 @@ static u32 rule_op_mangle_dupechar_last (const u32 p0, const u32 p1, u32 buf0[4]
   return out_len;
 }
 
-static u32 rule_op_mangle_dupechar_all (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_dupechar_all (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if ( in_len           ==  0) return (in_len);
   if ((in_len + in_len) >= 32) return (in_len);
@@ -1976,7 +1837,7 @@ static u32 rule_op_mangle_dupechar_all (const u32 p0, const u32 p1, u32 buf0[4],
   return out_len;
 }
 
-static u32 rule_op_mangle_switch_first (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_switch_first (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (in_len < 2) return (in_len);
 
@@ -1985,7 +1846,7 @@ static u32 rule_op_mangle_switch_first (const u32 p0, const u32 p1, u32 buf0[4],
   return in_len;
 }
 
-static u32 rule_op_mangle_switch_last (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_switch_last (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (in_len < 2) return (in_len);
 
@@ -2070,7 +1931,7 @@ static u32 rule_op_mangle_switch_last (const u32 p0, const u32 p1, u32 buf0[4], 
   return in_len;
 }
 
-static u32 rule_op_mangle_switch_at (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_switch_at (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
   if (p1 >= in_len) return (in_len);
@@ -2317,7 +2178,7 @@ static u32 rule_op_mangle_switch_at (const u32 p0, const u32 p1, u32 buf0[4], u3
   return in_len;
 }
 
-static u32 rule_op_mangle_chr_shiftl (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_chr_shiftl (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -2339,7 +2200,7 @@ static u32 rule_op_mangle_chr_shiftl (const u32 p0, const u32 p1, u32 buf0[4], u
   return in_len;
 }
 
-static u32 rule_op_mangle_chr_shiftr (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_chr_shiftr (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -2361,7 +2222,7 @@ static u32 rule_op_mangle_chr_shiftr (const u32 p0, const u32 p1, u32 buf0[4], u
   return in_len;
 }
 
-static u32 rule_op_mangle_chr_incr (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_chr_incr (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -2385,7 +2246,7 @@ static u32 rule_op_mangle_chr_incr (const u32 p0, const u32 p1, u32 buf0[4], u32
   return in_len;
 }
 
-static u32 rule_op_mangle_chr_decr (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_chr_decr (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 >= in_len) return (in_len);
 
@@ -2409,7 +2270,7 @@ static u32 rule_op_mangle_chr_decr (const u32 p0, const u32 p1, u32 buf0[4], u32
   return in_len;
 }
 
-static u32 rule_op_mangle_replace_np1 (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_replace_np1 (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if ((p0 + 1) >= in_len) return (in_len);
 
@@ -2436,7 +2297,7 @@ static u32 rule_op_mangle_replace_np1 (const u32 p0, const u32 p1, u32 buf0[4], 
   return in_len;
 }
 
-static u32 rule_op_mangle_replace_nm1 (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_replace_nm1 (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 == 0) return (in_len);
 
@@ -2465,7 +2326,7 @@ static u32 rule_op_mangle_replace_nm1 (const u32 p0, const u32 p1, u32 buf0[4], 
   return in_len;
 }
 
-static u32 rule_op_mangle_dupeblock_first (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_dupeblock_first (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 > in_len) return (in_len);
 
@@ -2503,7 +2364,7 @@ static u32 rule_op_mangle_dupeblock_first (const u32 p0, const u32 p1, u32 buf0[
   return out_len;
 }
 
-static u32 rule_op_mangle_dupeblock_last (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_dupeblock_last (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   if (p0 > in_len) return (in_len);
 
@@ -2511,8 +2372,8 @@ static u32 rule_op_mangle_dupeblock_last (const u32 p0, const u32 p1, u32 buf0[4
 
   u32 out_len = in_len;
 
-  u32 tib40[4];
-  u32 tib41[4];
+  u32 tib40[4] = { 0 };
+  u32 tib41[4] = { 0 };
 
   rshift_block_N (buf0, buf1, tib40, tib41, p0);
 
@@ -2532,7 +2393,7 @@ static u32 rule_op_mangle_dupeblock_last (const u32 p0, const u32 p1, u32 buf0[4
   return out_len;
 }
 
-static u32 rule_op_mangle_title (const u32 p0, const u32 p1, u32 buf0[4], u32 buf1[4], const u32 in_len)
+static u32 rule_op_mangle_title (MAYBE_UNUSED const u32 p0, MAYBE_UNUSED const u32 p1, MAYBE_UNUSED u32 buf0[4], MAYBE_UNUSED u32 buf1[4], const u32 in_len)
 {
   buf0[0] |= (generate_cmask (buf0[0]));
   buf0[1] |= (generate_cmask (buf0[1]));

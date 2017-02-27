@@ -8,12 +8,11 @@
 
 #include <signal.h>
 
-#if defined (_POSIX)
-#include <pthread.h>
-#include <semaphore.h>
-#endif // _POSIX
 #if defined (_WIN)
 #include <windows.h>
+#else
+#include <pthread.h>
+#include <semaphore.h>
 #endif // _WIN
 
 #if defined (_WIN)
@@ -27,7 +26,7 @@
 #define hc_thread_mutex_init(m)     InitializeCriticalSection (&m)
 #define hc_thread_mutex_delete(m)   DeleteCriticalSection     (&m)
 
-#elif defined (_POSIX)
+#else
 
 #define hc_thread_create(t,f,a)     pthread_create (&t, NULL, f, a)
 #define hc_thread_wait(n,a)         for (u32 i = 0; i < n; i++) pthread_join ((a)[i], NULL)
@@ -56,12 +55,14 @@ void hc_signal (void (callback) (int));
 #endif
 */
 
-void mycracked (status_ctx_t *status_ctx);
-void myabort (status_ctx_t *status_ctx);
-void myquit (status_ctx_t *status_ctx);
-void bypass (status_ctx_t *status_ctx);
-
-void SuspendThreads (status_ctx_t *status_ctx);
-void ResumeThreads (status_ctx_t *status_ctx);
+int mycracked (hashcat_ctx_t *hashcat_ctx);
+int myabort_runtime (hashcat_ctx_t *hashcat_ctx);
+int myabort_checkpoint (hashcat_ctx_t *hashcat_ctx);
+int myabort (hashcat_ctx_t *hashcat_ctx);
+int myquit (hashcat_ctx_t *hashcat_ctx);
+int bypass (hashcat_ctx_t *hashcat_ctx);
+int SuspendThreads (hashcat_ctx_t *hashcat_ctx);
+int ResumeThreads (hashcat_ctx_t *hashcat_ctx);
+int stop_at_checkpoint (hashcat_ctx_t *hashcat_ctx);
 
 #endif // _THREAD_H

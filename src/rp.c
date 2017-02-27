@@ -3,14 +3,10 @@
  * License.....: MIT
  */
 
-#if defined (__APPLE__)
-#include <stdio.h>
-#endif
-
 #include "common.h"
 #include "types.h"
 #include "memory.h"
-#include "logging.h"
+#include "event.h"
 #include "shared.h"
 #include "filehandling.h"
 #include "rp.h"
@@ -34,8 +30,6 @@ static const char grp_op_nop[] =
   RULE_OP_MANGLE_SWITCH_LAST,
   RULE_OP_MANGLE_DUPECHAR_ALL,
   RULE_OP_MANGLE_TITLE,
-  RULE_OP_MANGLE_APPEND_MEMORY,
-  RULE_OP_MANGLE_PREPEND_MEMORY,
 };
 
 static const char grp_op_pos_p0[] =
@@ -87,11 +81,6 @@ static const char grp_op_pos_pos1[] =
 {
   RULE_OP_MANGLE_EXTRACT,
   RULE_OP_MANGLE_OMIT
-};
-
-static const char grp_op_pos1_pos2_pos3[] =
-{
-  RULE_OP_MANGLE_EXTRACT_MEMORY
 };
 
 static const char grp_pos[] =
@@ -160,7 +149,6 @@ int generate_random_rule (char rule_buf[RP_RULE_BUFSIZ], const u32 rp_gen_func_m
     u32 r  = 0;
     u32 p1 = 0;
     u32 p2 = 0;
-    u32 p3 = 0;
 
     switch ((char) get_random_num (0, 9))
     {
@@ -230,17 +218,6 @@ int generate_random_rule (char rule_buf[RP_RULE_BUFSIZ], const u32 rp_gen_func_m
         while (p1 == p2)
         p2 = get_random_num (1, sizeof (grp_pos));
         rule_buf[rule_pos++] = grp_pos[p2];
-        break;
-
-      case 8:
-        r = get_random_num (0, sizeof (grp_op_pos1_pos2_pos3));
-        rule_buf[rule_pos++] = grp_op_pos1_pos2_pos3[r];
-        p1 = get_random_num (0, sizeof (grp_pos));
-        rule_buf[rule_pos++] = grp_pos[p1];
-        p2 = get_random_num (1, sizeof (grp_pos));
-        rule_buf[rule_pos++] = grp_pos[p1];
-        p3 = get_random_num (0, sizeof (grp_pos));
-        rule_buf[rule_pos++] = grp_pos[p3];
         break;
     }
   }
@@ -483,10 +460,10 @@ int kernel_rule_to_cpu_rule (char *rule_buf, kernel_rule_t *rule)
   u32 rule_pos;
   u32 rule_len = HCBUFSIZ_LARGE - 1; // maximum possible len
 
-  char rule_cmd;
-
   for (rule_cnt = 0, rule_pos = 0; rule_pos < rule_len && rule_cnt < MAX_KERNEL_RULES; rule_pos++, rule_cnt++)
   {
+    char rule_cmd;
+
     GET_NAME (rule);
 
     if (rule_cnt > 0) rule_buf[rule_pos++] = ' ';
@@ -686,6 +663,7 @@ int kernel_rule_to_cpu_rule (char *rule_buf, kernel_rule_t *rule)
         break;
 
       case 0:
+        if (rule_pos == 0) return -1;
         return rule_pos - 1;
 
       default:
@@ -693,12 +671,7 @@ int kernel_rule_to_cpu_rule (char *rule_buf, kernel_rule_t *rule)
     }
   }
 
-  if (rule_cnt > 0)
-  {
-    return rule_pos;
-  }
-
-  return -1;
+  return rule_pos;
 }
 
 bool kernel_rules_has_noop (const kernel_rule_t *kernel_rules_buf, const u32 kernel_rules_cnt)
@@ -714,8 +687,10 @@ bool kernel_rules_has_noop (const kernel_rule_t *kernel_rules_buf, const u32 ker
   return false;
 }
 
-int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options_t *user_options)
+int kernel_rules_load (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 *out_cnt)
 {
+  const user_options_t *user_options = hashcat_ctx->user_options;
+
   /**
    * load rules
    */
@@ -726,12 +701,12 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
 
   if (user_options->rp_files_cnt)
   {
-    all_kernel_rules_cnt = (u32 *) mycalloc (user_options->rp_files_cnt, sizeof (u32));
+    all_kernel_rules_cnt = (u32 *) hccalloc (user_options->rp_files_cnt, sizeof (u32));
 
-    all_kernel_rules_buf = (kernel_rule_t **) mycalloc (user_options->rp_files_cnt, sizeof (kernel_rule_t *));
+    all_kernel_rules_buf = (kernel_rule_t **) hccalloc (user_options->rp_files_cnt, sizeof (kernel_rule_t *));
   }
 
-  char *rule_buf = (char *) mymalloc (HCBUFSIZ_LARGE);
+  char *rule_buf = (char *) hcmalloc (HCBUFSIZ_LARGE);
 
   int rule_len = 0;
 
@@ -754,7 +729,12 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
 
     if ((fp = fopen (rp_file, "rb")) == NULL)
     {
-      log_error ("ERROR: %s: %s", rp_file, strerror (errno));
+      event_log_error (hashcat_ctx, "%s: %s", rp_file, strerror (errno));
+
+      hcfree (all_kernel_rules_cnt);
+      hcfree (all_kernel_rules_buf);
+
+      hcfree (rule_buf);
 
       return -1;
     }
@@ -771,7 +751,7 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
 
       if (kernel_rules_avail == kernel_rules_cnt)
       {
-        kernel_rules_buf = (kernel_rule_t *) myrealloc (kernel_rules_buf, kernel_rules_avail * sizeof (kernel_rule_t), INCR_RULES * sizeof (kernel_rule_t));
+        kernel_rules_buf = (kernel_rule_t *) hcrealloc (kernel_rules_buf, kernel_rules_avail * sizeof (kernel_rule_t), INCR_RULES * sizeof (kernel_rule_t));
 
         kernel_rules_avail += INCR_RULES;
       }
@@ -783,14 +763,14 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
 
       if (result == -1)
       {
-        log_info ("WARNING: Skipping invalid or unsupported rule in file %s on line %u: %s", rp_file, rule_line, rule_buf);
+        event_log_warning (hashcat_ctx, "Skipping invalid or unsupported rule in file %s on line %u: %s", rp_file, rule_line, rule_buf);
 
         continue;
       }
 
       if (cpu_rule_to_kernel_rule (rule_buf, rule_len, &kernel_rules_buf[kernel_rules_cnt]) == -1)
       {
-        log_info ("WARNING: Cannot convert rule for use on OpenCL device in file %s on line %u: %s", rp_file, rule_line, rule_buf);
+        event_log_warning (hashcat_ctx, "Cannot convert rule for use on OpenCL device in file %s on line %u: %s", rp_file, rule_line, rule_buf);
 
         memset (&kernel_rules_buf[kernel_rules_cnt], 0, sizeof (kernel_rule_t)); // needs to be cleared otherwise we could have some remaining data
 
@@ -806,7 +786,7 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
     all_kernel_rules_buf[i] = kernel_rules_buf;
   }
 
-  myfree (rule_buf);
+  hcfree (rule_buf);
 
   /**
    * merge rules
@@ -814,7 +794,7 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
 
   u32 kernel_rules_cnt = 1;
 
-  u32 *repeats = (u32 *) mycalloc (user_options->rp_files_cnt + 1, sizeof (u32));
+  u32 *repeats = (u32 *) hccalloc (user_options->rp_files_cnt + 1, sizeof (u32));
 
   repeats[0] = kernel_rules_cnt;
 
@@ -825,7 +805,7 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
     repeats[i + 1] = kernel_rules_cnt;
   }
 
-  kernel_rule_t *kernel_rules_buf = (kernel_rule_t *) mycalloc (kernel_rules_cnt, sizeof (kernel_rule_t));
+  kernel_rule_t *kernel_rules_buf = (kernel_rule_t *) hccalloc (kernel_rules_cnt, sizeof (kernel_rule_t));
 
   for (u32 i = 0; i < kernel_rules_cnt; i++)
   {
@@ -844,7 +824,7 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
       {
         if (out_pos == RULES_MAX - 1)
         {
-          // log_info ("WARNING: Truncating chaining of rule %d and rule %d as maximum number of function calls per rule exceeded", i, in_off);
+          // event_log_warning (hashcat_ctx, "Truncating chaining of rule %d and rule %d as maximum number of function calls per rule exceeded", i, in_off);
 
           break;
         }
@@ -854,17 +834,19 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
     }
   }
 
-  myfree (repeats);
+  hcfree (repeats);
+
+  hcfree (all_kernel_rules_cnt);
+  hcfree (all_kernel_rules_buf);
 
   if (kernel_rules_cnt == 0)
   {
-    log_error ("ERROR: No valid rules left");
+    event_log_error (hashcat_ctx, "No valid rules left");
+
+    hcfree (kernel_rules_buf);
 
     return -1;
   }
-
-  myfree (all_kernel_rules_cnt);
-  myfree (all_kernel_rules_buf);
 
   *out_cnt = kernel_rules_cnt;
   *out_buf = kernel_rules_buf;
@@ -872,12 +854,14 @@ int kernel_rules_load (kernel_rule_t **out_buf, u32 *out_cnt, const user_options
   return 0;
 }
 
-int kernel_rules_generate (kernel_rule_t **out_buf, u32 *out_cnt, const user_options_t *user_options)
+int kernel_rules_generate (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 *out_cnt)
 {
-  u32            kernel_rules_cnt = 0;
-  kernel_rule_t *kernel_rules_buf = mycalloc (user_options->rp_gen, sizeof (kernel_rule_t));
+  const user_options_t *user_options = hashcat_ctx->user_options;
 
-  char *rule_buf = (char *) mymalloc (RP_RULE_BUFSIZ);
+  u32            kernel_rules_cnt = 0;
+  kernel_rule_t *kernel_rules_buf = hccalloc (user_options->rp_gen, sizeof (kernel_rule_t));
+
+  char *rule_buf = (char *) hcmalloc (RP_RULE_BUFSIZ);
 
   for (kernel_rules_cnt = 0; kernel_rules_cnt < user_options->rp_gen; kernel_rules_cnt++)
   {
@@ -888,7 +872,7 @@ int kernel_rules_generate (kernel_rule_t **out_buf, u32 *out_cnt, const user_opt
     if (cpu_rule_to_kernel_rule (rule_buf, rule_len, &kernel_rules_buf[kernel_rules_cnt]) == -1) continue;
   }
 
-  myfree (rule_buf);
+  hcfree (rule_buf);
 
   *out_cnt = kernel_rules_cnt;
   *out_buf = kernel_rules_buf;

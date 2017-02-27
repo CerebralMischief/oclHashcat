@@ -3,49 +3,56 @@
  * License.....: MIT
  */
 
-#if defined (__APPLE__)
-#include <stdio.h>
-#endif
-
 #include "common.h"
 #include "types.h"
 #include "memory.h"
+#include "event.h"
 #include "logfile.h"
+#include "locking.h"
+#include "shared.h"
 
-static int logfile_generate_id ()
+void logfile_generate_topid (hashcat_ctx_t *hashcat_ctx)
 {
-  const int n = rand ();
+  logfile_ctx_t *logfile_ctx = hashcat_ctx->logfile_ctx;
 
-  time_t t;
-
-  time (&t);
-
-  return t + n;
-}
-
-void logfile_generate_topid (logfile_ctx_t *logfile_ctx)
-{
   if (logfile_ctx->enabled == false) return;
 
-  const int id = logfile_generate_id ();
+  u32 v[4];
 
-  snprintf (logfile_ctx->topid, 1 + 16, "TOP%08x", id);
+  gettimeofday ((struct timeval *) v, NULL);
+
+  snprintf (logfile_ctx->topid, 40, "TOP.%08x.%08x", v[0], v[2]);
 }
 
-void logfile_generate_subid (logfile_ctx_t *logfile_ctx)
+void logfile_generate_subid (hashcat_ctx_t *hashcat_ctx)
 {
+  logfile_ctx_t *logfile_ctx = hashcat_ctx->logfile_ctx;
+
   if (logfile_ctx->enabled == false) return;
 
-  const int id = logfile_generate_id ();
+  u32 v[4];
 
-  snprintf (logfile_ctx->subid, 1 + 16, "SUB%08x", id);
+  gettimeofday ((struct timeval *) v, NULL);
+
+  snprintf (logfile_ctx->subid, 40, "SUB.%08x.%08x", v[0], v[2]);
 }
 
-void logfile_append (const logfile_ctx_t *logfile_ctx, const char *fmt, ...)
+void logfile_append (hashcat_ctx_t *hashcat_ctx, const char *fmt, ...)
 {
+  logfile_ctx_t *logfile_ctx = hashcat_ctx->logfile_ctx;
+
   if (logfile_ctx->enabled == false) return;
 
   FILE *fp = fopen (logfile_ctx->logfile, "ab");
+
+  if (fp == NULL)
+  {
+    event_log_error (hashcat_ctx, "%s: %s", logfile_ctx->logfile, strerror (errno));
+
+    return;
+  }
+
+  lock_file (fp);
 
   va_list ap;
 
@@ -55,34 +62,40 @@ void logfile_append (const logfile_ctx_t *logfile_ctx, const char *fmt, ...)
 
   va_end (ap);
 
-  fputc ('\n', fp);
+  fwrite (EOL, strlen (EOL), 1, fp);
 
   fflush (fp);
 
   fclose (fp);
 }
 
-void logfile_init (logfile_ctx_t *logfile_ctx, const user_options_t *user_options, const folder_config_t *folder_config)
+int logfile_init (hashcat_ctx_t *hashcat_ctx)
 {
-  if (user_options->logfile_disable == true) return;
+  folder_config_t *folder_config = hashcat_ctx->folder_config;
+  logfile_ctx_t   *logfile_ctx   = hashcat_ctx->logfile_ctx;
+  user_options_t  *user_options  = hashcat_ctx->user_options;
 
-  logfile_ctx->logfile = (char *) mymalloc (HCBUFSIZ_TINY);
+  if (user_options->logfile_disable == true) return 0;
 
-  snprintf (logfile_ctx->logfile, HCBUFSIZ_TINY - 1, "%s/%s.log", folder_config->session_dir, user_options->session);
+  hc_asprintf (&logfile_ctx->logfile, "%s/%s.log", folder_config->session_dir, user_options->session);
 
-  logfile_ctx->subid = (char *) mymalloc (HCBUFSIZ_TINY);
-  logfile_ctx->topid = (char *) mymalloc (HCBUFSIZ_TINY);
+  logfile_ctx->subid = (char *) hcmalloc (HCBUFSIZ_TINY);
+  logfile_ctx->topid = (char *) hcmalloc (HCBUFSIZ_TINY);
 
   logfile_ctx->enabled = true;
+
+  return 0;
 }
 
-void logfile_destroy (logfile_ctx_t *logfile_ctx)
+void logfile_destroy (hashcat_ctx_t *hashcat_ctx)
 {
+  logfile_ctx_t *logfile_ctx = hashcat_ctx->logfile_ctx;
+
   if (logfile_ctx->enabled == false) return;
 
-  myfree (logfile_ctx->logfile);
-  myfree (logfile_ctx->topid);
-  myfree (logfile_ctx->subid);
+  hcfree (logfile_ctx->logfile);
+  hcfree (logfile_ctx->topid);
+  hcfree (logfile_ctx->subid);
 
   memset (logfile_ctx, 0, sizeof (logfile_ctx_t));
 }

@@ -8,6 +8,11 @@ typedef ushort u16;
 typedef uint   u32;
 typedef ulong  u64;
 
+typedef u8  u8a  __attribute__ ((aligned (8)));
+typedef u16 u16a __attribute__ ((aligned (8)));
+typedef u32 u32a __attribute__ ((aligned (8)));
+typedef u64 u64a __attribute__ ((aligned (8)));
+
 #ifndef NEW_SIMD_CODE
 #undef  VECT_SIZE
 #define VECT_SIZE 1
@@ -674,10 +679,10 @@ typedef struct
 
   u32 salt_len;
   u32 salt_iter;
+  u32 salt_iter2;
   u32 salt_sign[2];
 
   u32 keccak_mdlen;
-  u32 truecrypt_mdlen;
 
   u32 digests_cnt;
   u32 digests_done;
@@ -689,6 +694,78 @@ typedef struct
   u32 scrypt_p;
 
 } salt_t;
+
+#define LUKS_STRIPES 4000
+
+typedef enum hc_luks_hash_type
+{
+  HC_LUKS_HASH_TYPE_SHA1      = 1,
+  HC_LUKS_HASH_TYPE_SHA256    = 2,
+  HC_LUKS_HASH_TYPE_SHA512    = 3,
+  HC_LUKS_HASH_TYPE_RIPEMD160 = 4,
+  HC_LUKS_HASH_TYPE_WHIRLPOOL = 5,
+
+} hc_luks_hash_type_t;
+
+typedef enum hc_luks_key_size
+{
+  HC_LUKS_KEY_SIZE_128 = 128,
+  HC_LUKS_KEY_SIZE_256 = 256,
+  HC_LUKS_KEY_SIZE_512 = 512,
+
+} hc_luks_key_size_t;
+
+typedef enum hc_luks_cipher_type
+{
+  HC_LUKS_CIPHER_TYPE_AES     = 1,
+  HC_LUKS_CIPHER_TYPE_SERPENT = 2,
+  HC_LUKS_CIPHER_TYPE_TWOFISH = 3,
+
+} hc_luks_cipher_type_t;
+
+typedef enum hc_luks_cipher_mode
+{
+  HC_LUKS_CIPHER_MODE_CBC_ESSIV = 1,
+  HC_LUKS_CIPHER_MODE_CBC_PLAIN = 2,
+  HC_LUKS_CIPHER_MODE_XTS_PLAIN = 3,
+
+} hc_luks_cipher_mode_t;
+
+typedef struct luks
+{
+  int hash_type;    // hc_luks_hash_type_t
+  int key_size;     // hc_luks_key_size_t
+  int cipher_type;  // hc_luks_cipher_type_t
+  int cipher_mode;  // hc_luks_cipher_mode_t
+
+  u32 ct_buf[128];
+
+  u32 af_src_buf[((HC_LUKS_KEY_SIZE_512 / 8) * LUKS_STRIPES) / 4];
+
+} luks_t;
+
+typedef struct itunes_backup
+{
+  u32 wpky[10];
+  u32 dpsl[5];
+
+} itunes_backup_t;
+
+typedef struct luks_tmp
+{
+  u32 ipad32[8];
+  u64 ipad64[8];
+
+  u32 opad32[8];
+  u64 opad64[8];
+
+  u32 dgst32[32];
+  u64 dgst64[16];
+
+  u32 out32[32];
+  u64 out64[16];
+
+} luks_tmp_t;
 
 typedef struct
 {
@@ -711,16 +788,21 @@ typedef struct
 
 } pdf_t;
 
-typedef struct
+typedef struct wpa
 {
-  u32 pke[25];
-  u32 eapol[64];
-  int eapol_size;
-  int keyver;
-  u8  orig_mac1[6];
-  u8  orig_mac2[6];
-  u8  orig_nonce1[32];
-  u8  orig_nonce2[32];
+  u32  pke[25];
+  u32  eapol[64 + 16];
+  u16  eapol_len;
+  u8   message_pair;
+  int  message_pair_chgd;
+  u8   keyver;
+  u8   orig_mac_ap[6];
+  u8   orig_mac_sta[6];
+  u8   orig_nonce_ap[32];
+  u8   orig_nonce_sta[32];
+  int  essid_reuse;
+  u8   essid_len;
+  u8   essid[32];
 
 } wpa_t;
 
@@ -1281,26 +1363,17 @@ typedef struct
 
 typedef struct
 {
-  u32 user[16];
+  u32 ukey[8];
 
-} cram_md5_t;
+  u32 hook_success;
+
+} seven_zip_hook_t;
 
 typedef struct
 {
-  u32 iv_buf[4];
-  u32 iv_len;
+  u32 user[16];
 
-  u32 salt_buf[4];
-  u32 salt_len;
-
-  u32 crc;
-
-  u32 data_buf[96];
-  u32 data_len;
-
-  u32 unpack_size;
-
-} seven_zip_t;
+} cram_md5_t;
 
 typedef struct
 {

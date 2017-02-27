@@ -5,13 +5,18 @@
 
 #include "common.h"
 #include "types.h"
+#include "event.h"
 #include "memory.h"
-#include "logging.h"
 #include "combinator.h"
+#include "shared.h"
 #include "wordlist.h"
 
-int combinator_ctx_init (combinator_ctx_t *combinator_ctx, user_options_t *user_options, user_options_extra_t *user_options_extra, const straight_ctx_t *straight_ctx, dictstat_ctx_t *dictstat_ctx, wl_data_t *wl_data)
+int combinator_ctx_init (hashcat_ctx_t *hashcat_ctx)
 {
+  combinator_ctx_t     *combinator_ctx      = hashcat_ctx->combinator_ctx;
+  user_options_extra_t *user_options_extra  = hashcat_ctx->user_options_extra;
+  user_options_t       *user_options        = hashcat_ctx->user_options;
+
   combinator_ctx->enabled = false;
 
   if (user_options->left        == true) return 0;
@@ -26,7 +31,7 @@ int combinator_ctx_init (combinator_ctx_t *combinator_ctx, user_options_t *user_
 
   combinator_ctx->enabled = true;
 
-  combinator_ctx->scratch_buf = (char *) mymalloc (HCBUFSIZ_LARGE);
+  combinator_ctx->scratch_buf = (char *) hcmalloc (HCBUFSIZ_LARGE);
 
   if (user_options->attack_mode == ATTACK_MODE_STRAIGHT)
   {
@@ -39,74 +44,61 @@ int combinator_ctx_init (combinator_ctx_t *combinator_ctx, user_options_t *user_
     char *dictfile1 = user_options_extra->hc_workv[0];
     char *dictfile2 = user_options_extra->hc_workv[1];
 
+    // at this point we know the file actually exist
     // find the bigger dictionary and use as base
+
+    if (hc_path_is_file (dictfile1) == false)
+    {
+      event_log_error (hashcat_ctx, "%s: Not a regular file", dictfile1);
+
+      return -1;
+    }
+
+    if (hc_path_is_file (dictfile2) == false)
+    {
+      event_log_error (hashcat_ctx, "%s: Not a regular file", dictfile2);
+
+      return -1;
+    }
 
     FILE *fp1 = NULL;
     FILE *fp2 = NULL;
 
-    struct stat tmp_stat;
-
     if ((fp1 = fopen (dictfile1, "rb")) == NULL)
     {
-      log_error ("ERROR: %s: %s", dictfile1, strerror (errno));
-
-      return -1;
-    }
-
-    if (stat (dictfile1, &tmp_stat) == -1)
-    {
-      log_error ("ERROR: %s: %s", dictfile1, strerror (errno));
-
-      fclose (fp1);
-
-      return -1;
-    }
-
-    if (S_ISDIR (tmp_stat.st_mode))
-    {
-      log_error ("ERROR: %s must be a regular file", dictfile1, strerror (errno));
-
-      fclose (fp1);
+      event_log_error (hashcat_ctx, "%s: %s", dictfile1, strerror (errno));
 
       return -1;
     }
 
     if ((fp2 = fopen (dictfile2, "rb")) == NULL)
     {
-      log_error ("ERROR: %s: %s", dictfile2, strerror (errno));
+      event_log_error (hashcat_ctx, "%s: %s", dictfile2, strerror (errno));
 
       fclose (fp1);
-
-      return -1;
-    }
-
-    if (stat (dictfile2, &tmp_stat) == -1)
-    {
-      log_error ("ERROR: %s: %s", dictfile2, strerror (errno));
-
-      fclose (fp1);
-      fclose (fp2);
-
-      return -1;
-    }
-
-    if (S_ISDIR (tmp_stat.st_mode))
-    {
-      log_error ("ERROR: %s must be a regular file", dictfile2, strerror (errno));
-
-      fclose (fp1);
-      fclose (fp2);
 
       return -1;
     }
 
     combinator_ctx->combs_cnt = 1;
 
-    const u64 words1_cnt = count_words (wl_data, user_options, user_options_extra, straight_ctx, combinator_ctx, fp1, dictfile1, dictstat_ctx);
+    u64 words1_cnt = 0;
+
+    const int rc1 = count_words (hashcat_ctx, fp1, dictfile1, &words1_cnt);
+
+    if (rc1 == -1)
+    {
+      event_log_error (hashcat_ctx, "Integer overflow detected in keyspace of wordlist: %s", dictfile1);
+
+      fclose (fp1);
+      fclose (fp2);
+
+      return -1;
+    }
 
     if (words1_cnt == 0)
     {
-      log_error ("ERROR: %s: empty file", dictfile1);
+      event_log_error (hashcat_ctx, "%s: empty file", dictfile1);
 
       fclose (fp1);
       fclose (fp2);
@@ -116,11 +108,23 @@ int combinator_ctx_init (combinator_ctx_t *combinator_ctx, user_options_t *user_
 
     combinator_ctx->combs_cnt = 1;
 
-    const u64 words2_cnt = count_words (wl_data, user_options, user_options_extra, straight_ctx, combinator_ctx, fp2, dictfile2, dictstat_ctx);
+    u64 words2_cnt = 0;
+
+    const int rc2 = count_words (hashcat_ctx, fp2, dictfile2, &words2_cnt);
+
+    if (rc2 == -1)
+    {
+      event_log_error (hashcat_ctx, "Integer overflow detected in keyspace of wordlist: %s", dictfile2);
+
+      fclose (fp1);
+      fclose (fp2);
+
+      return -1;
+    }
 
     if (words2_cnt == 0)
     {
-      log_error ("ERROR: %s: empty file", dictfile2);
+      event_log_error (hashcat_ctx, "%s: empty file", dictfile2);
 
       fclose (fp1);
       fclose (fp2);
@@ -173,11 +177,13 @@ int combinator_ctx_init (combinator_ctx_t *combinator_ctx, user_options_t *user_
   return 0;
 }
 
-void combinator_ctx_destroy (combinator_ctx_t *combinator_ctx)
+void combinator_ctx_destroy (hashcat_ctx_t *hashcat_ctx)
 {
+  combinator_ctx_t *combinator_ctx = hashcat_ctx->combinator_ctx;
+
   if (combinator_ctx->enabled == false) return;
 
-  myfree (combinator_ctx->scratch_buf);
+  hcfree (combinator_ctx->scratch_buf);
 
   memset (combinator_ctx, 0, sizeof (combinator_ctx_t));
 }

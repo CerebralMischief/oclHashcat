@@ -6,21 +6,23 @@
 #include "common.h"
 #include "types.h"
 #include "memory.h"
-#include "logging.h"
+#include "event.h"
 #include "convert.h"
 #include "dictstat.h"
 #include "thread.h"
 #include "rp_cpu.h"
+#include "shared.h"
 #include "wordlist.h"
 
-u32 convert_from_hex (char *line_buf, const u32 line_len, const user_options_t *user_options)
+u32 convert_from_hex (hashcat_ctx_t *hashcat_ctx, char *line_buf, const u32 line_len)
 {
+  const user_options_t *user_options = hashcat_ctx->user_options;
+
   if (line_len & 1) return (line_len); // not in hex
 
   if (user_options->hex_wordlist == true)
   {
-    u32 i;
-    u32 j;
+    size_t i, j;
 
     for (i = 0, j = 0; j < line_len; i += 1, j += 2)
     {
@@ -31,33 +33,21 @@ u32 convert_from_hex (char *line_buf, const u32 line_len, const user_options_t *
 
     return (i);
   }
-  else if (line_len >= 6) // $HEX[] = 6
+
+  if (is_hexify ((const u8 *) line_buf, (const int) line_len) == true)
   {
-    if (line_buf[0]            != '$') return (line_len);
-    if (line_buf[1]            != 'H') return (line_len);
-    if (line_buf[2]            != 'E') return (line_len);
-    if (line_buf[3]            != 'X') return (line_len);
-    if (line_buf[4]            != '[') return (line_len);
-    if (line_buf[line_len - 1] != ']') return (line_len);
+    const int new_len = exec_unhexify ((const u8 *) line_buf, (const int) line_len, (u8 *) line_buf, (const int) line_len);
 
-    u32 i;
-    u32 j;
-
-    for (i = 0, j = 5; j < line_len - 1; i += 1, j += 2)
-    {
-      line_buf[i] = hex_to_u8 ((const u8 *) &line_buf[j]);
-    }
-
-    memset (line_buf + i, 0, line_len - i);
-
-    return (i);
+    return (u32) new_len;
   }
 
   return (line_len);
 }
 
-void load_segment (wl_data_t *wl_data, FILE *fd)
+int load_segment (hashcat_ctx_t *hashcat_ctx, FILE *fd)
 {
+  wl_data_t *wl_data = hashcat_ctx->wl_data;
+
   // NOTE: use (never changing) ->incr here instead of ->avail otherwise the buffer gets bigger and bigger
 
   wl_data->pos = 0;
@@ -66,15 +56,15 @@ void load_segment (wl_data_t *wl_data, FILE *fd)
 
   wl_data->buf[wl_data->cnt] = 0;
 
-  if (wl_data->cnt == 0) return;
+  if (wl_data->cnt == 0) return 0;
 
-  if (wl_data->buf[wl_data->cnt - 1] == '\n') return;
+  if (wl_data->buf[wl_data->cnt - 1] == '\n') return 0;
 
   while (!feof (fd))
   {
     if (wl_data->cnt == wl_data->avail)
     {
-      wl_data->buf = (char *) myrealloc (wl_data->buf, wl_data->avail, wl_data->incr);
+      wl_data->buf = (char *) hcrealloc (wl_data->buf, wl_data->avail, wl_data->incr);
 
       wl_data->avail += wl_data->incr;
     }
@@ -99,7 +89,7 @@ void load_segment (wl_data_t *wl_data, FILE *fd)
     wl_data->buf[wl_data->cnt - 1] = '\n';
   }
 
-  return;
+  return 0;
 }
 
 void get_next_word_lm (char *buf, u64 sz, u64 *len, u64 *off)
@@ -177,8 +167,12 @@ void get_next_word_std (char *buf, u64 sz, u64 *len, u64 *off)
   *len = sz;
 }
 
-void get_next_word (wl_data_t *wl_data, const user_options_t *user_options, const user_options_extra_t *user_options_extra, FILE *fd, char **out_buf, u32 *out_len)
+void get_next_word (hashcat_ctx_t *hashcat_ctx, FILE *fd, char **out_buf, u32 *out_len)
 {
+  user_options_t       *user_options       = hashcat_ctx->user_options;
+  user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+  wl_data_t            *wl_data            = hashcat_ctx->wl_data;
+
   while (wl_data->pos < wl_data->cnt)
   {
     u64 off;
@@ -192,13 +186,13 @@ void get_next_word (wl_data_t *wl_data, const user_options_t *user_options, cons
 
     if (run_rule_engine (user_options_extra->rule_len_l, user_options->rule_buf_l))
     {
-      char rule_buf_out[BLOCK_SIZE] = { 0 };
-
       int rule_len_out = -1;
 
       if (len < BLOCK_SIZE)
       {
-        rule_len_out = _old_apply_rule (user_options->rule_buf_l, user_options_extra->rule_len_l, ptr, len, rule_buf_out);
+        char unused[BLOCK_SIZE] = { 0 };
+
+        rule_len_out = _old_apply_rule (user_options->rule_buf_l, user_options_extra->rule_len_l, ptr, len, unused);
       }
 
       if (rule_len_out < 0)
@@ -232,9 +226,9 @@ void get_next_word (wl_data_t *wl_data, const user_options_t *user_options, cons
     return;
   }
 
-  load_segment (wl_data, fd);
+  load_segment (hashcat_ctx, fd);
 
-  get_next_word (wl_data, user_options, user_options_extra, fd, out_buf, out_len);
+  get_next_word (hashcat_ctx, fd, out_buf, out_len);
 }
 
 void pw_add (hc_device_param_t *device_param, const u8 *pw_buf, const int pw_len)
@@ -261,21 +255,26 @@ void pw_add (hc_device_param_t *device_param, const u8 *pw_buf, const int pw_len
   //}
 }
 
-u64 count_words (wl_data_t *wl_data, const user_options_t *user_options, const user_options_extra_t *user_options_extra, const straight_ctx_t *straight_ctx, const combinator_ctx_t *combinator_ctx, FILE *fd, const char *dictfile, dictstat_ctx_t *dictstat_ctx)
+int count_words (hashcat_ctx_t *hashcat_ctx, FILE *fd, const char *dictfile, u64 *result)
 {
+  combinator_ctx_t     *combinator_ctx     = hashcat_ctx->combinator_ctx;
+  straight_ctx_t       *straight_ctx       = hashcat_ctx->straight_ctx;
+  user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+  user_options_t       *user_options       = hashcat_ctx->user_options;
+  wl_data_t            *wl_data            = hashcat_ctx->wl_data;
+
   //hc_signal (NULL);
 
   dictstat_t d;
 
   d.cnt = 0;
 
-  #if defined (_POSIX)
-  fstat (fileno (fd), &d.stat);
-  #endif
+  if (hc_fstat (fileno (fd), &d.stat))
+  {
+    *result = 0;
 
-  #if defined (_WIN)
-  _fstat64 (fileno (fd), &d.stat);
-  #endif
+    return 0;
+  }
 
   d.stat.st_mode    = 0;
   d.stat.st_nlink   = 0;
@@ -289,9 +288,14 @@ u64 count_words (wl_data_t *wl_data, const user_options_t *user_options, const u
   d.stat.st_blocks  = 0;
   #endif
 
-  if (d.stat.st_size == 0) return 0;
+  if (d.stat.st_size == 0)
+  {
+    *result = 0;
 
-  const u64 cached_cnt = dictstat_find (dictstat_ctx, &d);
+    return 0;
+  }
+
+  const u64 cached_cnt = dictstat_find (hashcat_ctx, &d);
 
   if (run_rule_engine (user_options_extra->rule_len_l, user_options->rule_buf_l) == 0)
   {
@@ -301,19 +305,29 @@ u64 count_words (wl_data_t *wl_data, const user_options_t *user_options, const u
 
       if (user_options_extra->attack_kern == ATTACK_KERN_STRAIGHT)
       {
+        if (overflow_check_u64_mul (keyspace, straight_ctx->kernel_rules_cnt) == false) return -1;
+
         keyspace *= straight_ctx->kernel_rules_cnt;
       }
       else if (user_options_extra->attack_kern == ATTACK_KERN_COMBI)
       {
+        if (overflow_check_u64_mul (keyspace, combinator_ctx->combs_cnt) == false) return -1;
+
         keyspace *= combinator_ctx->combs_cnt;
       }
 
-      if (user_options->quiet == false) log_info ("Cache-hit dictionary stats %s: %" PRIu64 " bytes, %" PRIu64 " words, %" PRIu64 " keyspace", dictfile, d.stat.st_size, cached_cnt, keyspace);
-      if (user_options->quiet == false) log_info ("");
+      cache_hit_t cache_hit;
 
-      //hc_signal (sigHandler_default);
+      cache_hit.dictfile      = (char *) dictfile;
+      cache_hit.stat.st_size  = d.stat.st_size;
+      cache_hit.cached_cnt    = cached_cnt;
+      cache_hit.keyspace      = keyspace;
 
-      return (keyspace);
+      EVENT_DATA (EVENT_WORDLIST_CACHE_HIT, &cache_hit, sizeof (cache_hit));
+
+      *result = keyspace;
+
+      return 0;
     }
   }
 
@@ -326,7 +340,7 @@ u64 count_words (wl_data_t *wl_data, const user_options_t *user_options, const u
 
   while (!feof (fd))
   {
-    load_segment (wl_data, fd);
+    load_segment (hashcat_ctx, fd);
 
     comp += wl_data->cnt;
 
@@ -341,13 +355,13 @@ u64 count_words (wl_data_t *wl_data, const user_options_t *user_options, const u
 
       if (run_rule_engine (user_options_extra->rule_len_l, user_options->rule_buf_l))
       {
-        char rule_buf_out[BLOCK_SIZE] = { 0 };
-
         int rule_len_out = -1;
 
         if (len < BLOCK_SIZE)
         {
-          rule_len_out = _old_apply_rule (user_options->rule_buf_l, user_options_extra->rule_len_l, wl_data->buf + i, len, rule_buf_out);
+          char unused[BLOCK_SIZE] = { 0 };
+
+          rule_len_out = _old_apply_rule (user_options->rule_buf_l, user_options_extra->rule_len_l, wl_data->buf + i, len, unused);
         }
 
         if (rule_len_out < 0)
@@ -364,10 +378,14 @@ u64 count_words (wl_data_t *wl_data, const user_options_t *user_options, const u
       {
         if (user_options_extra->attack_kern == ATTACK_KERN_STRAIGHT)
         {
+          if (overflow_check_u64_add (cnt, straight_ctx->kernel_rules_cnt) == false) return -1;
+
           cnt += straight_ctx->kernel_rules_cnt;
         }
         else if (user_options_extra->attack_kern == ATTACK_KERN_COMBI)
         {
+          if (overflow_check_u64_add (cnt, combinator_ctx->combs_cnt) == false) return -1;
+
           cnt += combinator_ctx->combs_cnt;
         }
 
@@ -383,38 +401,60 @@ u64 count_words (wl_data_t *wl_data, const user_options_t *user_options, const u
 
     if ((now - prev) == 0) continue;
 
-    double percent = (double) comp / (double) d.stat.st_size;
-
-    if (user_options->quiet == false) log_info_nn ("Generating dictionary stats for %s: %" PRIu64 " bytes (%.2f%%), %" PRIu64 " words, %" PRIu64 " keyspace", dictfile, comp, percent * 100, cnt2, cnt);
-
     time (&prev);
+
+    double percent = ((double) comp / (double) d.stat.st_size) * 100;
+
+    if (percent < 100)
+    {
+      cache_generate_t cache_generate;
+
+      cache_generate.dictfile    = (char *) dictfile;
+      cache_generate.comp        = comp;
+      cache_generate.percent     = percent;
+      cache_generate.cnt         = cnt;
+      cache_generate.cnt2        = cnt2;
+
+      EVENT_DATA (EVENT_WORDLIST_CACHE_GENERATE, &cache_generate, sizeof (cache_generate));
+    }
   }
 
-  if (user_options->quiet == false) log_info ("Generated dictionary stats for %s: %" PRIu64 " bytes, %" PRIu64 " words, %" PRIu64 " keyspace", dictfile, comp, cnt2, cnt);
-  if (user_options->quiet == false) log_info ("");
+  cache_generate_t cache_generate;
 
-  dictstat_append (dictstat_ctx, &d);
+  cache_generate.dictfile    = (char *) dictfile;
+  cache_generate.comp        = comp;
+  cache_generate.percent     = 100;
+  cache_generate.cnt         = cnt;
+  cache_generate.cnt2        = cnt2;
+
+  EVENT_DATA (EVENT_WORDLIST_CACHE_GENERATE, &cache_generate, sizeof (cache_generate));
+
+  dictstat_append (hashcat_ctx, &d);
 
   //hc_signal (sigHandler_default);
 
-  return (cnt);
+  *result = cnt;
+
+  return 0;
 }
 
-void wl_data_init (wl_data_t *wl_data, const user_options_t *user_options, const hashconfig_t *hashconfig)
+int wl_data_init (hashcat_ctx_t *hashcat_ctx)
 {
+  hashconfig_t   *hashconfig   = hashcat_ctx->hashconfig;
+  user_options_t *user_options = hashcat_ctx->user_options;
+  wl_data_t      *wl_data      = hashcat_ctx->wl_data;
+
   wl_data->enabled = false;
 
-  if (user_options->benchmark   == true) return;
-  if (user_options->keyspace    == true) return;
-  if (user_options->left        == true) return;
-  if (user_options->opencl_info == true) return;
-//  if (user_options->show        == true) return;
-  if (user_options->usage       == true) return;
-  if (user_options->version     == true) return;
+  if (user_options->benchmark   == true) return 0;
+  if (user_options->left        == true) return 0;
+  if (user_options->opencl_info == true) return 0;
+  if (user_options->usage       == true) return 0;
+  if (user_options->version     == true) return 0;
 
   wl_data->enabled = true;
 
-  wl_data->buf   = (char *) mymalloc (user_options->segment_size);
+  wl_data->buf   = (char *) hcmalloc (user_options->segment_size);
   wl_data->avail = user_options->segment_size;
   wl_data->incr  = user_options->segment_size;
   wl_data->cnt   = 0;
@@ -435,13 +475,17 @@ void wl_data_init (wl_data_t *wl_data, const user_options_t *user_options, const
   {
     wl_data->func = get_next_word_lm;
   }
+
+  return 0;
 }
 
-void wl_data_destroy (wl_data_t *wl_data)
+void wl_data_destroy (hashcat_ctx_t *hashcat_ctx)
 {
+  wl_data_t *wl_data = hashcat_ctx->wl_data;
+
   if (wl_data->enabled == false) return;
 
-  myfree (wl_data->buf);
+  hcfree (wl_data->buf);
 
   memset (wl_data, 0, sizeof (wl_data_t));
 }

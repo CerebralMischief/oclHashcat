@@ -6,7 +6,7 @@
 #include "common.h"
 #include "types.h"
 #include "memory.h"
-#include "logging.h"
+#include "event.h"
 #include "cpu_crc32.h"
 
 static const u32 crc32tab[256] =
@@ -77,7 +77,19 @@ static const u32 crc32tab[256] =
   0xb40bbe37, 0xc30c8ea1, 0x5a05df1b, 0x2d02ef8d
 };
 
-void cpu_crc32 (const char *filename, u8 keytab[64])
+u32 cpu_crc32_buffer (const u8 *buf, const size_t length)
+{
+  u32 crc = ~0u;
+
+  for (size_t pos = 0; pos < length; pos++)
+  {
+    crc = crc32tab[(crc ^ buf[pos]) & 0xff] ^ (crc >> 8);
+  }
+
+  return crc ^ 0xffffffff;;
+}
+
+int cpu_crc32 (hashcat_ctx_t *hashcat_ctx, const char *filename, u8 keytab[64])
 {
   u32 crc = ~0u;
 
@@ -85,32 +97,32 @@ void cpu_crc32 (const char *filename, u8 keytab[64])
 
   if (fd == NULL)
   {
-    log_error ("%s: %s", filename, strerror (errno));
+    event_log_error (hashcat_ctx, "%s: %s", filename, strerror (errno));
 
-    exit (-1);
+    return -1;
   }
 
   #define MAX_KEY_SIZE (1024 * 1024)
 
-  u8 *buf = (u8 *) mymalloc (MAX_KEY_SIZE + 1);
+  u8 *buf = (u8 *) hcmalloc (MAX_KEY_SIZE + 1);
 
-  int nread = fread (buf, sizeof (u8), MAX_KEY_SIZE, fd);
+  size_t nread = fread (buf, sizeof (u8), MAX_KEY_SIZE, fd);
 
   fclose (fd);
 
-  int kpos = 0;
+  size_t kpos = 0;
 
-  for (int fpos = 0; fpos < nread; fpos++)
+  for (size_t fpos = 0; fpos < nread; fpos++)
   {
     crc = crc32tab[(crc ^ buf[fpos]) & 0xff] ^ (crc >> 8);
 
-    keytab[kpos++] += (crc >> 24) & 0xff;
-    keytab[kpos++] += (crc >> 16) & 0xff;
-    keytab[kpos++] += (crc >>  8) & 0xff;
-    keytab[kpos++] += (crc >>  0) & 0xff;
-
-    if (kpos >= 64) kpos = 0;
+    keytab[kpos++] += (crc >> 24) & 0xff; if (kpos >= 64) kpos = 0;
+    keytab[kpos++] += (crc >> 16) & 0xff; if (kpos >= 64) kpos = 0;
+    keytab[kpos++] += (crc >>  8) & 0xff; if (kpos >= 64) kpos = 0;
+    keytab[kpos++] += (crc >>  0) & 0xff; if (kpos >= 64) kpos = 0;
   }
 
-  myfree (buf);
+  hcfree (buf);
+
+  return 0;
 }

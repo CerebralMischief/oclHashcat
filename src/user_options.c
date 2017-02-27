@@ -6,7 +6,7 @@
 #include "common.h"
 #include "types.h"
 #include "memory.h"
-#include "logging.h"
+#include "event.h"
 #include "logfile.h"
 #include "interface.h"
 #include "shared.h"
@@ -18,86 +18,91 @@ static const char short_options[] = "hVvm:a:r:j:k:g:o:t:d:D:n:u:c:p:s:l:1:2:3:4:
 
 static const struct option long_options[] =
 {
-  {"help",                      no_argument,       0, IDX_HELP},
-  {"version",                   no_argument,       0, IDX_VERSION},
-  {"quiet",                     no_argument,       0, IDX_QUIET},
-  {"show",                      no_argument,       0, IDX_SHOW},
-  {"left",                      no_argument,       0, IDX_LEFT},
-  {"username",                  no_argument,       0, IDX_USERNAME},
-  {"remove",                    no_argument,       0, IDX_REMOVE},
-  {"remove-timer",              required_argument, 0, IDX_REMOVE_TIMER},
-  {"skip",                      required_argument, 0, IDX_SKIP},
-  {"limit",                     required_argument, 0, IDX_LIMIT},
-  {"keyspace",                  no_argument,       0, IDX_KEYSPACE},
-  {"potfile-disable",           no_argument,       0, IDX_POTFILE_DISABLE},
-  {"potfile-path",              required_argument, 0, IDX_POTFILE_PATH},
-  {"debug-mode",                required_argument, 0, IDX_DEBUG_MODE},
-  {"debug-file",                required_argument, 0, IDX_DEBUG_FILE},
-  {"induction-dir",             required_argument, 0, IDX_INDUCTION_DIR},
-  {"outfile-check-dir",         required_argument, 0, IDX_OUTFILE_CHECK_DIR},
-  {"force",                     no_argument,       0, IDX_FORCE},
-  {"benchmark",                 no_argument,       0, IDX_BENCHMARK},
-  {"stdout",                    no_argument,       0, IDX_STDOUT_FLAG},
-  {"restore",                   no_argument,       0, IDX_RESTORE},
-  {"restore-disable",           no_argument,       0, IDX_RESTORE_DISABLE},
-  {"status",                    no_argument,       0, IDX_STATUS},
-  {"status-timer",              required_argument, 0, IDX_STATUS_TIMER},
-  {"machine-readable",          no_argument,       0, IDX_MACHINE_READABLE},
-  {"loopback",                  no_argument,       0, IDX_LOOPBACK},
-  {"weak-hash-threshold",       required_argument, 0, IDX_WEAK_HASH_THRESHOLD},
-  {"session",                   required_argument, 0, IDX_SESSION},
-  {"runtime",                   required_argument, 0, IDX_RUNTIME},
-  {"generate-rules",            required_argument, 0, IDX_RP_GEN},
-  {"generate-rules-func-min",   required_argument, 0, IDX_RP_GEN_FUNC_MIN},
-  {"generate-rules-func-max",   required_argument, 0, IDX_RP_GEN_FUNC_MAX},
-  {"generate-rules-seed",       required_argument, 0, IDX_RP_GEN_SEED},
-  {"rule-left",                 required_argument, 0, IDX_RULE_BUF_L},
-  {"rule-right",                required_argument, 0, IDX_RULE_BUF_R},
-  {"hash-type",                 required_argument, 0, IDX_HASH_MODE},
   {"attack-mode",               required_argument, 0, IDX_ATTACK_MODE},
-  {"rules-file",                required_argument, 0, IDX_RP_FILE},
-  {"outfile",                   required_argument, 0, IDX_OUTFILE},
-  {"outfile-format",            required_argument, 0, IDX_OUTFILE_FORMAT},
-  {"outfile-autohex-disable",   no_argument,       0, IDX_OUTFILE_AUTOHEX_DISABLE},
-  {"outfile-check-timer",       required_argument, 0, IDX_OUTFILE_CHECK_TIMER},
-  {"hex-charset",               no_argument,       0, IDX_HEX_CHARSET},
-  {"hex-salt",                  no_argument,       0, IDX_HEX_SALT},
-  {"hex-wordlist",              no_argument,       0, IDX_HEX_WORDLIST},
-  {"markov-disable",            no_argument,       0, IDX_MARKOV_DISABLE},
-  {"markov-classic",            no_argument,       0, IDX_MARKOV_CLASSIC},
-  {"markov-threshold",          required_argument, 0, IDX_MARKOV_THRESHOLD},
-  {"markov-hcstat",             required_argument, 0, IDX_MARKOV_HCSTAT},
-  {"cpu-affinity",              required_argument, 0, IDX_CPU_AFFINITY},
-  {"opencl-info",               no_argument,       0, IDX_OPENCL_INFO},
-  {"opencl-devices",            required_argument, 0, IDX_OPENCL_DEVICES},
-  {"opencl-platforms",          required_argument, 0, IDX_OPENCL_PLATFORMS},
-  {"opencl-device-types",       required_argument, 0, IDX_OPENCL_DEVICE_TYPES},
-  {"opencl-vector-width",       required_argument, 0, IDX_OPENCL_VECTOR_WIDTH},
-  {"workload-profile",          required_argument, 0, IDX_WORKLOAD_PROFILE},
-  {"kernel-accel",              required_argument, 0, IDX_KERNEL_ACCEL},
-  {"kernel-loops",              required_argument, 0, IDX_KERNEL_LOOPS},
-  {"nvidia-spin-damp",          required_argument, 0, IDX_NVIDIA_SPIN_DAMP},
-  {"gpu-temp-disable",          no_argument,       0, IDX_GPU_TEMP_DISABLE},
-  {"gpu-temp-abort",            required_argument, 0, IDX_GPU_TEMP_ABORT},
-  {"gpu-temp-retain",           required_argument, 0, IDX_GPU_TEMP_RETAIN},
-  {"powertune-enable",          no_argument,       0, IDX_POWERTUNE_ENABLE},
-  {"logfile-disable",           no_argument,       0, IDX_LOGFILE_DISABLE},
-  {"truecrypt-keyfiles",        required_argument, 0, IDX_TRUECRYPT_KEYFILES},
-  {"veracrypt-keyfiles",        required_argument, 0, IDX_VERACRYPT_KEYFILES},
-  {"veracrypt-pim",             required_argument, 0, IDX_VERACRYPT_PIM},
-  {"segment-size",              required_argument, 0, IDX_SEGMENT_SIZE},
-  {"scrypt-tmto",               required_argument, 0, IDX_SCRYPT_TMTO},
-  {"seperator",                 required_argument, 0, IDX_SEPARATOR},
-  {"separator",                 required_argument, 0, IDX_SEPARATOR},
-  {"bitmap-min",                required_argument, 0, IDX_BITMAP_MIN},
+  {"benchmark",                 no_argument,       0, IDX_BENCHMARK},
   {"bitmap-max",                required_argument, 0, IDX_BITMAP_MAX},
-  {"increment",                 no_argument,       0, IDX_INCREMENT},
-  {"increment-min",             required_argument, 0, IDX_INCREMENT_MIN},
-  {"increment-max",             required_argument, 0, IDX_INCREMENT_MAX},
+  {"bitmap-min",                required_argument, 0, IDX_BITMAP_MIN},
+  {"cpu-affinity",              required_argument, 0, IDX_CPU_AFFINITY},
   {"custom-charset1",           required_argument, 0, IDX_CUSTOM_CHARSET_1},
   {"custom-charset2",           required_argument, 0, IDX_CUSTOM_CHARSET_2},
   {"custom-charset3",           required_argument, 0, IDX_CUSTOM_CHARSET_3},
   {"custom-charset4",           required_argument, 0, IDX_CUSTOM_CHARSET_4},
+  {"debug-file",                required_argument, 0, IDX_DEBUG_FILE},
+  {"debug-mode",                required_argument, 0, IDX_DEBUG_MODE},
+  {"force",                     no_argument,       0, IDX_FORCE},
+  {"generate-rules-func-max",   required_argument, 0, IDX_RP_GEN_FUNC_MAX},
+  {"generate-rules-func-min",   required_argument, 0, IDX_RP_GEN_FUNC_MIN},
+  {"generate-rules",            required_argument, 0, IDX_RP_GEN},
+  {"generate-rules-seed",       required_argument, 0, IDX_RP_GEN_SEED},
+  {"gpu-temp-abort",            required_argument, 0, IDX_GPU_TEMP_ABORT},
+  {"gpu-temp-disable",          no_argument,       0, IDX_GPU_TEMP_DISABLE},
+  {"gpu-temp-retain",           required_argument, 0, IDX_GPU_TEMP_RETAIN},
+  {"hash-type",                 required_argument, 0, IDX_HASH_MODE},
+  {"hccapx-message-pair",       required_argument, 0, IDX_HCCAPX_MESSAGE_PAIR},
+  {"help",                      no_argument,       0, IDX_HELP},
+  {"hex-charset",               no_argument,       0, IDX_HEX_CHARSET},
+  {"hex-salt",                  no_argument,       0, IDX_HEX_SALT},
+  {"hex-wordlist",              no_argument,       0, IDX_HEX_WORDLIST},
+  {"increment-max",             required_argument, 0, IDX_INCREMENT_MAX},
+  {"increment-min",             required_argument, 0, IDX_INCREMENT_MIN},
+  {"increment",                 no_argument,       0, IDX_INCREMENT},
+  {"induction-dir",             required_argument, 0, IDX_INDUCTION_DIR},
+  {"keep-guessing",             no_argument,       0, IDX_KEEP_GUESSING},
+  {"kernel-accel",              required_argument, 0, IDX_KERNEL_ACCEL},
+  {"kernel-loops",              required_argument, 0, IDX_KERNEL_LOOPS},
+  {"keyspace",                  no_argument,       0, IDX_KEYSPACE},
+  {"left",                      no_argument,       0, IDX_LEFT},
+  {"limit",                     required_argument, 0, IDX_LIMIT},
+  {"logfile-disable",           no_argument,       0, IDX_LOGFILE_DISABLE},
+  {"loopback",                  no_argument,       0, IDX_LOOPBACK},
+  {"machine-readable",          no_argument,       0, IDX_MACHINE_READABLE},
+  {"markov-classic",            no_argument,       0, IDX_MARKOV_CLASSIC},
+  {"markov-disable",            no_argument,       0, IDX_MARKOV_DISABLE},
+  {"markov-hcstat",             required_argument, 0, IDX_MARKOV_HCSTAT},
+  {"markov-threshold",          required_argument, 0, IDX_MARKOV_THRESHOLD},
+  {"nvidia-spin-damp",          required_argument, 0, IDX_NVIDIA_SPIN_DAMP},
+  {"opencl-devices",            required_argument, 0, IDX_OPENCL_DEVICES},
+  {"opencl-device-types",       required_argument, 0, IDX_OPENCL_DEVICE_TYPES},
+  {"opencl-info",               no_argument,       0, IDX_OPENCL_INFO},
+  {"opencl-platforms",          required_argument, 0, IDX_OPENCL_PLATFORMS},
+  {"opencl-vector-width",       required_argument, 0, IDX_OPENCL_VECTOR_WIDTH},
+  {"outfile-autohex-disable",   no_argument,       0, IDX_OUTFILE_AUTOHEX_DISABLE},
+  {"outfile-check-dir",         required_argument, 0, IDX_OUTFILE_CHECK_DIR},
+  {"outfile-check-timer",       required_argument, 0, IDX_OUTFILE_CHECK_TIMER},
+  {"outfile-format",            required_argument, 0, IDX_OUTFILE_FORMAT},
+  {"outfile",                   required_argument, 0, IDX_OUTFILE},
+  {"potfile-disable",           no_argument,       0, IDX_POTFILE_DISABLE},
+  {"potfile-path",              required_argument, 0, IDX_POTFILE_PATH},
+  {"powertune-enable",          no_argument,       0, IDX_POWERTUNE_ENABLE},
+  {"quiet",                     no_argument,       0, IDX_QUIET},
+  {"remove",                    no_argument,       0, IDX_REMOVE},
+  {"remove-timer",              required_argument, 0, IDX_REMOVE_TIMER},
+  {"restore-disable",           no_argument,       0, IDX_RESTORE_DISABLE},
+  {"restore-file-path",         required_argument, 0, IDX_RESTORE_FILE_PATH},
+  {"restore",                   no_argument,       0, IDX_RESTORE},
+  {"rule-left",                 required_argument, 0, IDX_RULE_BUF_L},
+  {"rule-right",                required_argument, 0, IDX_RULE_BUF_R},
+  {"rules-file",                required_argument, 0, IDX_RP_FILE},
+  {"runtime",                   required_argument, 0, IDX_RUNTIME},
+  {"scrypt-tmto",               required_argument, 0, IDX_SCRYPT_TMTO},
+  {"segment-size",              required_argument, 0, IDX_SEGMENT_SIZE},
+  {"separator",                 required_argument, 0, IDX_SEPARATOR},
+  {"seperator",                 required_argument, 0, IDX_SEPARATOR},
+  {"session",                   required_argument, 0, IDX_SESSION},
+  {"show",                      no_argument,       0, IDX_SHOW},
+  {"skip",                      required_argument, 0, IDX_SKIP},
+  {"status",                    no_argument,       0, IDX_STATUS},
+  {"status-timer",              required_argument, 0, IDX_STATUS_TIMER},
+  {"stdout",                    no_argument,       0, IDX_STDOUT_FLAG},
+  {"speed-only",                no_argument,       0, IDX_SPEED_ONLY},
+  {"progress-only",             no_argument,       0, IDX_PROGRESS_ONLY},
+  {"truecrypt-keyfiles",        required_argument, 0, IDX_TRUECRYPT_KEYFILES},
+  {"username",                  no_argument,       0, IDX_USERNAME},
+  {"veracrypt-keyfiles",        required_argument, 0, IDX_VERACRYPT_KEYFILES},
+  {"veracrypt-pim",             required_argument, 0, IDX_VERACRYPT_PIM},
+  {"version",                   no_argument,       0, IDX_VERSION},
+  {"weak-hash-threshold",       required_argument, 0, IDX_WEAK_HASH_THRESHOLD},
+  {"workload-profile",          required_argument, 0, IDX_WORKLOAD_PROFILE},
   {0, 0, 0, 0}
 };
 
@@ -108,8 +113,10 @@ static char DEF_MASK_CS_1[] = "?l?d?u";
 static char DEF_MASK_CS_2[] = "?l?d";
 static char DEF_MASK_CS_3[] = "?l?d*!$@_";
 
-void user_options_init (user_options_t *user_options)
+int user_options_init (hashcat_ctx_t *hashcat_ctx)
 {
+  user_options_t *user_options = hashcat_ctx->user_options;
+
   user_options->attack_mode               = ATTACK_MODE;
   user_options->benchmark                 = BENCHMARK;
   user_options->bitmap_max                = BITMAP_MAX;
@@ -126,6 +133,7 @@ void user_options_init (user_options_t *user_options)
   user_options->gpu_temp_disable          = GPU_TEMP_DISABLE;
   user_options->gpu_temp_retain           = GPU_TEMP_RETAIN;
   user_options->hash_mode                 = HASH_MODE;
+  user_options->hccapx_message_pair       = HCCAPX_MESSAGE_PAIR;
   user_options->hex_charset               = HEX_CHARSET;
   user_options->hex_salt                  = HEX_SALT;
   user_options->hex_wordlist              = HEX_WORDLIST;
@@ -135,6 +143,7 @@ void user_options_init (user_options_t *user_options)
   user_options->induction_dir             = NULL;
   user_options->kernel_accel              = KERNEL_ACCEL;
   user_options->kernel_loops              = KERNEL_LOOPS;
+  user_options->keep_guessing             = KEEP_GUESSING;
   user_options->keyspace                  = KEYSPACE;
   user_options->left                      = LEFT;
   user_options->limit                     = LIMIT;
@@ -163,6 +172,7 @@ void user_options_init (user_options_t *user_options)
   user_options->remove                    = REMOVE;
   user_options->remove_timer              = REMOVE_TIMER;
   user_options->restore_disable           = RESTORE_DISABLE;
+  user_options->restore_file_path         = NULL;
   user_options->restore                   = RESTORE;
   user_options->restore_timer             = RESTORE_TIMER;
   user_options->rp_gen_func_max           = RP_GEN_FUNC_MAX;
@@ -181,6 +191,8 @@ void user_options_init (user_options_t *user_options)
   user_options->status                    = STATUS;
   user_options->status_timer              = STATUS_TIMER;
   user_options->stdout_flag               = STDOUT_FLAG;
+  user_options->speed_only                = SPEED_ONLY;
+  user_options->progress_only             = PROGRESS_ONLY;
   user_options->truecrypt_keyfiles        = NULL;
   user_options->usage                     = USAGE;
   user_options->username                  = USERNAME;
@@ -190,22 +202,28 @@ void user_options_init (user_options_t *user_options)
   user_options->weak_hash_threshold       = WEAK_HASH_THRESHOLD;
   user_options->workload_profile          = WORKLOAD_PROFILE;
   user_options->rp_files_cnt              = 0;
-  user_options->rp_files                  = (char **) mycalloc (256, sizeof (char *));
+  user_options->rp_files                  = (char **) hccalloc (256, sizeof (char *));
   user_options->hc_bin                    = PROGNAME;
   user_options->hc_argc                   = 0;
   user_options->hc_argv                   = NULL;
+
+  return 0;
 }
 
-void user_options_destroy (user_options_t *user_options)
+void user_options_destroy (hashcat_ctx_t *hashcat_ctx)
 {
-  myfree (user_options->rp_files);
+  user_options_t *user_options = hashcat_ctx->user_options;
+
+  hcfree (user_options->rp_files);
 
   //do not reset this, it might be used from main.c
   //memset (user_options, 0, sizeof (user_options_t));
 }
 
-int user_options_getopt (user_options_t *user_options, int argc, char **argv)
+int user_options_getopt (hashcat_ctx_t *hashcat_ctx, int argc, char **argv)
 {
+  user_options_t *user_options = hashcat_ctx->user_options;
+
   int c = -1;
 
   optind = 1;
@@ -236,10 +254,14 @@ int user_options_getopt (user_options_t *user_options, int argc, char **argv)
       case IDX_FORCE:                     user_options->force                     = true;           break;
       case IDX_SKIP:                      user_options->skip                      = atoll (optarg); break;
       case IDX_LIMIT:                     user_options->limit                     = atoll (optarg); break;
+      case IDX_KEEP_GUESSING:             user_options->keep_guessing             = true;           break;
       case IDX_KEYSPACE:                  user_options->keyspace                  = true;           break;
       case IDX_BENCHMARK:                 user_options->benchmark                 = true;           break;
       case IDX_STDOUT_FLAG:               user_options->stdout_flag               = true;           break;
+      case IDX_SPEED_ONLY:                user_options->speed_only                = true;           break;
+      case IDX_PROGRESS_ONLY:             user_options->progress_only             = true;           break;
       case IDX_RESTORE_DISABLE:           user_options->restore_disable           = true;           break;
+      case IDX_RESTORE_FILE_PATH:         user_options->restore_file_path         = optarg;         break;
       case IDX_STATUS:                    user_options->status                    = true;           break;
       case IDX_STATUS_TIMER:              user_options->status_timer              = atoi (optarg);  break;
       case IDX_MACHINE_READABLE:          user_options->machine_readable          = true;           break;
@@ -268,7 +290,7 @@ int user_options_getopt (user_options_t *user_options, int argc, char **argv)
       case IDX_OUTFILE:                   user_options->outfile                   = optarg;         break;
       case IDX_OUTFILE_FORMAT:            user_options->outfile_format            = atoi (optarg);
                                           user_options->outfile_format_chgd       = true;           break;
-      case IDX_OUTFILE_AUTOHEX_DISABLE:   user_options->outfile_autohex           = 0;              break;
+      case IDX_OUTFILE_AUTOHEX_DISABLE:   user_options->outfile_autohex           = false;          break;
       case IDX_OUTFILE_CHECK_TIMER:       user_options->outfile_check_timer       = atoi (optarg);  break;
       case IDX_HEX_CHARSET:               user_options->hex_charset               = true;           break;
       case IDX_HEX_SALT:                  user_options->hex_salt                  = true;           break;
@@ -293,6 +315,8 @@ int user_options_getopt (user_options_t *user_options, int argc, char **argv)
       case IDX_GPU_TEMP_RETAIN:           user_options->gpu_temp_retain           = atoi (optarg);  break;
       case IDX_POWERTUNE_ENABLE:          user_options->powertune_enable          = true;           break;
       case IDX_LOGFILE_DISABLE:           user_options->logfile_disable           = true;           break;
+      case IDX_HCCAPX_MESSAGE_PAIR:       user_options->hccapx_message_pair       = atoi (optarg);
+                                          user_options->hccapx_message_pair_chgd  = true;           break;
       case IDX_TRUECRYPT_KEYFILES:        user_options->truecrypt_keyfiles        = optarg;         break;
       case IDX_VERACRYPT_KEYFILES:        user_options->veracrypt_keyfiles        = optarg;         break;
       case IDX_VERACRYPT_PIM:             user_options->veracrypt_pim             = atoi (optarg);  break;
@@ -314,7 +338,7 @@ int user_options_getopt (user_options_t *user_options, int argc, char **argv)
 
       default:
       {
-        log_error ("ERROR: Invalid argument specified");
+        event_log_error (hashcat_ctx, "Invalid argument specified");
 
         return -1;
       }
@@ -323,7 +347,7 @@ int user_options_getopt (user_options_t *user_options, int argc, char **argv)
 
   if (optopt != 0)
   {
-    log_error ("ERROR: Invalid argument specified");
+    event_log_error (hashcat_ctx, "Invalid argument specified");
 
     return -1;
   }
@@ -336,18 +360,20 @@ int user_options_getopt (user_options_t *user_options, int argc, char **argv)
   return 0;
 }
 
-int user_options_sanity (const user_options_t *user_options)
+int user_options_sanity (hashcat_ctx_t *hashcat_ctx)
 {
+  user_options_t *user_options = hashcat_ctx->user_options;
+
   if (user_options->hc_argc < 0)
   {
-    log_error ("ERROR: hc_argc %d is invalid", user_options->hc_argc);
+    event_log_error (hashcat_ctx, "hc_argc %d is invalid", user_options->hc_argc);
 
     return -1;
   }
 
   if (user_options->hc_argv == NULL)
   {
-    log_error ("ERROR: hc_argv is NULL");
+    event_log_error (hashcat_ctx, "hc_argv is NULL");
 
     return -1;
   }
@@ -359,33 +385,58 @@ int user_options_sanity (const user_options_t *user_options)
    && (user_options->attack_mode != ATTACK_MODE_HYBRID2)
    && (user_options->attack_mode != ATTACK_MODE_NONE))
   {
-    log_error ("ERROR: Invalid attack-mode specified");
+    event_log_error (hashcat_ctx, "Invalid attack-mode specified");
 
     return -1;
+  }
+
+  if (user_options->hccapx_message_pair_chgd == true)
+  {
+    if (user_options->remove == true)
+    {
+      event_log_error (hashcat_ctx, "Mixing remove parameter not allowed with hccapx-message-pair parameter");
+
+      return -1;
+    }
+
+    if (user_options->hccapx_message_pair >= 6)
+    {
+      event_log_error (hashcat_ctx, "Invalid hccapx-message-pair specified");
+
+      return -1;
+    }
   }
 
   if (user_options->runtime_chgd == true && user_options->runtime == 0)
   {
-    log_error ("ERROR: Invalid runtime specified");
+    event_log_error (hashcat_ctx, "Invalid runtime specified");
 
     return -1;
   }
 
-  if (user_options->hash_mode > 14100)
+  if (user_options->runtime_chgd == true && user_options->loopback == true)
   {
-    log_error ("ERROR: Invalid hash-type specified");
+    event_log_error (hashcat_ctx, "Runtime-Limit is not allowed in combination with --loopback");
+
+    return -1;
+  }
+
+  if (user_options->hash_mode > 99999)
+  {
+    event_log_error (hashcat_ctx, "Invalid hash-type specified");
 
     return -1;
   }
 
   if (user_options->username == true)
   {
-    if  ((user_options->hash_mode == 2500)
-     ||  (user_options->hash_mode == 5200)
-     || ((user_options->hash_mode >= 6200)  && (user_options->hash_mode <= 6299))
-     || ((user_options->hash_mode >= 13700) && (user_options->hash_mode <= 13799)))
+    if  ((user_options->hash_mode ==  2500)
+     ||  (user_options->hash_mode ==  5200)
+     || ((user_options->hash_mode >=  6200) && (user_options->hash_mode <=  6299))
+     || ((user_options->hash_mode >= 13700) && (user_options->hash_mode <= 13799))
+     ||  (user_options->hash_mode ==  9000))
     {
-      log_error ("ERROR: Mixing support for user names and hashes of type %s is not supported", strhashtype (user_options->hash_mode));
+      event_log_error (hashcat_ctx, "Mixing support for user names and hashes of type %s is not supported", strhashtype (user_options->hash_mode));
 
       return -1;
     }
@@ -393,7 +444,7 @@ int user_options_sanity (const user_options_t *user_options)
 
   if (user_options->outfile_format > 16)
   {
-    log_error ("ERROR: Invalid outfile-format specified");
+    event_log_error (hashcat_ctx, "Invalid outfile-format specified");
 
     return -1;
   }
@@ -402,9 +453,12 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->outfile_format_chgd == true)
     {
-      log_error ("ERROR: Mixing outfile-format > 1 with left parameter is not allowed");
+      if (user_options->outfile_format > 1)
+      {
+        event_log_error (hashcat_ctx, "Mixing outfile-format > 1 with left parameter is not allowed");
 
-      return -1;
+        return -1;
+      }
     }
   }
 
@@ -412,57 +466,74 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->outfile_format_chgd == true)
     {
-      log_error ("ERROR: Mixing outfile-format > 7 with show parameter is not allowed");
+      if (user_options->outfile_format > 7)
+      {
+        event_log_error (hashcat_ctx, "Mixing outfile-format > 7 with show parameter is not allowed");
 
-      return -1;
+        return -1;
+      }
     }
   }
 
   if (user_options->increment_min < INCREMENT_MIN)
   {
-    log_error ("ERROR: Invalid increment-min specified");
+    event_log_error (hashcat_ctx, "Invalid increment-min specified");
 
     return -1;
   }
 
   if (user_options->increment_max > INCREMENT_MAX)
   {
-    log_error ("ERROR: Invalid increment-max specified");
+    event_log_error (hashcat_ctx, "Invalid increment-max specified");
 
     return -1;
   }
 
   if (user_options->increment_min > user_options->increment_max)
   {
-    log_error ("ERROR: Invalid increment-min specified");
+    event_log_error (hashcat_ctx, "Invalid increment-min specified");
+
+    return -1;
+  }
+
+  if ((user_options->increment == true) && (user_options->progress_only == true))
+  {
+    event_log_error (hashcat_ctx, "Increment is not allowed in combination with --progress-only");
+
+    return -1;
+  }
+
+  if ((user_options->increment == true) && (user_options->speed_only == true))
+  {
+    event_log_error (hashcat_ctx, "Increment is not allowed in combination with --speed-only");
 
     return -1;
   }
 
   if ((user_options->increment == true) && (user_options->attack_mode == ATTACK_MODE_STRAIGHT))
   {
-    log_error ("ERROR: Increment is not allowed in attack-mode 0");
+    event_log_error (hashcat_ctx, "Increment is not allowed in attack-mode 0");
 
     return -1;
   }
 
   if ((user_options->increment == false) && (user_options->increment_min_chgd == true))
   {
-    log_error ("ERROR: Increment-min is only supported combined with increment switch");
+    event_log_error (hashcat_ctx, "Increment-min is only supported combined with increment switch");
 
     return -1;
   }
 
   if ((user_options->increment == false) && (user_options->increment_max_chgd == true))
   {
-    log_error ("ERROR: Increment-max is only supported combined with increment switch");
+    event_log_error (hashcat_ctx, "Increment-max is only supported combined with increment switch");
 
     return -1;
   }
 
   if (user_options->rp_files_cnt > 0 && user_options->rp_gen == true)
   {
-    log_error ("ERROR: Use of both rules-file and rules-generate is not supported");
+    event_log_error (hashcat_ctx, "Use of both rules-file and rules-generate is not supported");
 
     return -1;
   }
@@ -471,7 +542,7 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->attack_mode != ATTACK_MODE_STRAIGHT)
     {
-      log_error ("ERROR: Use of rules-file or rules-generate only allowed in attack-mode 0");
+      event_log_error (hashcat_ctx, "Use of rules-file or rules-generate only allowed in attack-mode 0");
 
       return -1;
     }
@@ -479,14 +550,14 @@ int user_options_sanity (const user_options_t *user_options)
 
   if (user_options->bitmap_min > user_options->bitmap_max)
   {
-    log_error ("ERROR: Invalid bitmap-min specified");
+    event_log_error (hashcat_ctx, "Invalid bitmap-min specified");
 
     return -1;
   }
 
   if (user_options->rp_gen_func_min > user_options->rp_gen_func_max)
   {
-    log_error ("ERROR: Invalid rp-gen-func-min specified");
+    event_log_error (hashcat_ctx, "Invalid rp-gen-func-min specified");
 
     return -1;
   }
@@ -495,24 +566,25 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->force == false)
     {
-      log_info ("The manual use of the -n option (or --kernel-accel) is outdated");
-      log_info ("Please consider using the -w option instead");
-      log_info ("You can use --force to override this but do not post error reports if you do so");
-      log_info ("");
+      event_log_error (hashcat_ctx, "The manual use of the -n option (or --kernel-accel) is outdated.");
+
+      event_log_warning (hashcat_ctx, "Please consider using the -w option instead.");
+      event_log_warning (hashcat_ctx, "You can use --force to override this but do not post error reports if you do so.");
+      event_log_warning (hashcat_ctx, NULL);
 
       return -1;
     }
 
     if (user_options->kernel_accel < 1)
     {
-      log_error ("ERROR: Invalid kernel-accel specified");
+      event_log_error (hashcat_ctx, "Invalid kernel-accel specified");
 
       return -1;
     }
 
     if (user_options->kernel_accel > 1024)
     {
-      log_error ("ERROR: Invalid kernel-accel specified");
+      event_log_error (hashcat_ctx, "Invalid kernel-accel specified");
 
       return -1;
     }
@@ -522,24 +594,25 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->force == false)
     {
-      log_info ("The manual use of the -u option (or --kernel-loops) is outdated");
-      log_info ("Please consider using the -w option instead");
-      log_info ("You can use --force to override this but do not post error reports if you do so");
-      log_info ("");
+      event_log_error (hashcat_ctx, "The manual use of the -u option (or --kernel-loops) is outdated.");
+
+      event_log_warning (hashcat_ctx, "Please consider using the -w option instead.");
+      event_log_warning (hashcat_ctx, "You can use --force to override this but do not post error reports if you do so.");
+      event_log_warning (hashcat_ctx, NULL);
 
       return -1;
     }
 
     if (user_options->kernel_loops < 1)
     {
-      log_error ("ERROR: Invalid kernel-loops specified");
+      event_log_error (hashcat_ctx, "Invalid kernel-loops specified");
 
       return -1;
     }
 
     if (user_options->kernel_loops > 1024)
     {
-      log_error ("ERROR: Invalid kernel-loops specified");
+      event_log_error (hashcat_ctx, "Invalid kernel-loops specified");
 
       return -1;
     }
@@ -547,7 +620,7 @@ int user_options_sanity (const user_options_t *user_options)
 
   if ((user_options->workload_profile < 1) || (user_options->workload_profile > 4))
   {
-    log_error ("ERROR: workload-profile %i not available", user_options->workload_profile);
+    event_log_error (hashcat_ctx, "workload-profile %u not available", user_options->workload_profile);
 
     return -1;
   }
@@ -556,7 +629,7 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (is_power_of_2 (user_options->opencl_vector_width) == false || user_options->opencl_vector_width > 16)
     {
-      log_error ("ERROR: opencl-vector-width %i not allowed", user_options->opencl_vector_width);
+      event_log_error (hashcat_ctx, "opencl-vector-width %u not allowed", user_options->opencl_vector_width);
 
       return -1;
     }
@@ -566,14 +639,14 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->remove == true)
     {
-      log_error ("ERROR: Mixing remove parameter not allowed with show parameter or left parameter");
+      event_log_error (hashcat_ctx, "Mixing remove parameter not allowed with show parameter or left parameter");
 
       return -1;
     }
 
     if (user_options->potfile_disable == true)
     {
-      log_error ("ERROR: Mixing potfile-disable parameter not allowed with show parameter or left parameter");
+      event_log_error (hashcat_ctx, "Mixing potfile-disable parameter not allowed with show parameter or left parameter");
 
       return -1;
     }
@@ -583,7 +656,7 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->outfile_autohex == false)
     {
-      log_error ("ERROR: Mixing outfile-autohex-disable parameter not allowed with show parameter");
+      event_log_error (hashcat_ctx, "Mixing outfile-autohex-disable parameter not allowed with show parameter");
 
       return -1;
     }
@@ -593,13 +666,13 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->show == true)
     {
-      log_error ("ERROR: Combining show parameter with keyspace parameter is not allowed");
+      event_log_error (hashcat_ctx, "Combining show parameter with keyspace parameter is not allowed");
 
       return -1;
     }
     else if (user_options->left == true)
     {
-      log_error ("ERROR: Combining left parameter with keyspace parameter is not allowed");
+      event_log_error (hashcat_ctx, "Combining left parameter with keyspace parameter is not allowed");
 
       return -1;
     }
@@ -609,14 +682,14 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->remove == false)
     {
-      log_error ("ERROR: Parameter remove-timer require parameter remove enabled");
+      event_log_error (hashcat_ctx, "Parameter remove-timer require parameter remove enabled");
 
       return -1;
     }
 
     if (user_options->remove_timer < 1)
     {
-      log_error ("ERROR: Parameter remove-timer must have a value greater than or equal to 1");
+      event_log_error (hashcat_ctx, "Parameter remove-timer must have a value greater than or equal to 1");
 
       return -1;
     }
@@ -628,32 +701,31 @@ int user_options_sanity (const user_options_t *user_options)
     {
       if ((user_options->rp_files_cnt == 0) && (user_options->rp_gen == 0))
       {
-        log_error ("ERROR: Parameter loopback not allowed without rules-file or rules-generate");
+        event_log_error (hashcat_ctx, "Parameter loopback not allowed without rules-file or rules-generate");
 
         return -1;
       }
     }
     else
     {
-      log_error ("ERROR: Parameter loopback allowed in attack-mode 0 only");
+      event_log_error (hashcat_ctx, "Parameter loopback allowed in attack-mode 0 only");
 
       return -1;
     }
   }
 
-
   if (user_options->debug_mode > 0)
   {
     if (user_options->attack_mode != ATTACK_MODE_STRAIGHT)
     {
-      log_error ("ERROR: Parameter debug-mode option is only available with attack-mode 0");
+      event_log_error (hashcat_ctx, "Parameter debug-mode option is only available with attack-mode 0");
 
       return -1;
     }
 
     if ((user_options->rp_files_cnt == 0) && (user_options->rp_gen == 0))
     {
-      log_error ("ERROR: Parameter debug-mode not allowed without rules-file or rules-generate");
+      event_log_error (hashcat_ctx, "Parameter debug-mode not allowed without rules-file or rules-generate");
 
       return -1;
     }
@@ -661,7 +733,7 @@ int user_options_sanity (const user_options_t *user_options)
 
   if (user_options->debug_mode > 4)
   {
-    log_error ("ERROR: Invalid debug-mode specified");
+    event_log_error (hashcat_ctx, "Invalid debug-mode specified");
 
     return -1;
   }
@@ -670,7 +742,7 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->debug_mode < 1)
     {
-      log_error ("ERROR: Parameter debug-file requires parameter debug-mode to be set");
+      event_log_error (hashcat_ctx, "Parameter debug-file requires parameter debug-mode to be set");
 
       return -1;
     }
@@ -680,7 +752,7 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->attack_mode == ATTACK_MODE_BF)
     {
-      log_error ("ERROR: Parameter induction-dir not allowed with brute-force attacks");
+      event_log_error (hashcat_ctx, "Parameter induction-dir not allowed with brute-force attacks");
 
       return -1;
     }
@@ -690,7 +762,7 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if ((user_options->weak_hash_threshold != WEAK_HASH_THRESHOLD) && (user_options->weak_hash_threshold != 0))
     {
-      log_error ("ERROR: setting --weak-hash-threshold allowed only in straight-attack mode");
+      event_log_error (hashcat_ctx, "setting --weak-hash-threshold allowed only in straight-attack mode");
 
       return -1;
     }
@@ -698,7 +770,7 @@ int user_options_sanity (const user_options_t *user_options)
 
   if (user_options->nvidia_spin_damp > 100)
   {
-    log_error ("ERROR: setting --nvidia-spin-damp must be between 0 and 100 (inclusive)");
+    event_log_error (hashcat_ctx, "setting --nvidia-spin-damp must be between 0 and 100 (inclusive)");
 
     return -1;
   }
@@ -707,7 +779,7 @@ int user_options_sanity (const user_options_t *user_options)
   {
     if (user_options->gpu_temp_abort < user_options->gpu_temp_retain)
     {
-      log_error ("ERROR: Invalid values for gpu-temp-abort. Parameter gpu-temp-abort is less than gpu-temp-retain.");
+      event_log_error (hashcat_ctx, "Invalid values for gpu-temp-abort. Parameter gpu-temp-abort is less than gpu-temp-retain.");
 
       return -1;
     }
@@ -719,10 +791,38 @@ int user_options_sanity (const user_options_t *user_options)
     {
       if (user_options->attack_mode != ATTACK_MODE_BF)
       {
-        log_error ("ERROR: Only attack-mode 3 allowed in benchmark mode");
+        event_log_error (hashcat_ctx, "Only attack-mode 3 allowed in benchmark mode");
 
         return -1;
       }
+    }
+  }
+
+  // custom charset checks
+
+  if ((user_options->custom_charset_1 != NULL)
+   || (user_options->custom_charset_2 != NULL)
+   || (user_options->custom_charset_3 != NULL)
+   || (user_options->custom_charset_4 != NULL))
+  {
+    if (user_options->attack_mode == ATTACK_MODE_STRAIGHT)
+    {
+      event_log_error (hashcat_ctx, "Custom-charsets not supported in attack-mode 0");
+
+      return -1;
+    }
+    else if (user_options->attack_mode == ATTACK_MODE_COMBI)
+    {
+      event_log_error (hashcat_ctx, "Custom-charsets not supported in attack-mode 1");
+
+      return -1;
+    }
+
+    if (user_options->hc_argc < 2)
+    {
+      event_log_error (hashcat_ctx, "You need to specify a mask if you specify a custom-charset");
+
+      return -1;
     }
   }
 
@@ -883,8 +983,10 @@ int user_options_sanity (const user_options_t *user_options)
   return 0;
 }
 
-void user_options_preprocess (user_options_t *user_options)
+void user_options_preprocess (hashcat_ctx_t *hashcat_ctx)
 {
+  user_options_t *user_options = hashcat_ctx->user_options;
+
   #if !defined (WITH_HWMON)
   user_options->powertune_enable = false;
   user_options->gpu_temp_disable = true;
@@ -894,42 +996,59 @@ void user_options_preprocess (user_options_t *user_options)
 
   // some options can influence or overwrite other options
 
-  if (user_options->opencl_info == true
-   || user_options->keyspace    == true
-   || user_options->benchmark   == true
-   || user_options->stdout_flag == true)
+  if (user_options->opencl_info   == true
+   || user_options->keyspace      == true
+   || user_options->stdout_flag   == true
+   || user_options->speed_only    == true
+   || user_options->progress_only == true)
   {
-    user_options->show                = false;
-    user_options->left                = false;
     user_options->gpu_temp_disable    = true;
+    user_options->left                = false;
+    user_options->logfile_disable     = true;
+    user_options->nvidia_spin_damp    = 0;
+    user_options->outfile_check_timer = 0;
     user_options->potfile_disable     = true;
     user_options->powertune_enable    = false;
-    user_options->restore             = false;
     user_options->restore_disable     = true;
+    user_options->restore             = false;
     user_options->restore_timer       = 0;
-    user_options->logfile_disable     = true;
-    user_options->weak_hash_threshold = 0;
-    user_options->nvidia_spin_damp    = 0;
+    user_options->show                = false;
     user_options->status              = false;
     user_options->status_timer        = 0;
-    user_options->outfile_check_timer = 0;
+    user_options->weak_hash_threshold = 0;
   }
 
   if (user_options->benchmark == true)
   {
-    user_options->session             = "benchmark";
     user_options->attack_mode         = ATTACK_MODE_BF;
+    user_options->gpu_temp_disable    = false;
+    user_options->gpu_temp_retain     = 0;
     user_options->increment           = false;
+    user_options->left                = false;
+    user_options->logfile_disable     = true;
+    user_options->nvidia_spin_damp    = 0;
+    user_options->potfile_disable     = true;
+    user_options->powertune_enable    = true;
+    user_options->restore_disable     = true;
+    user_options->restore             = false;
+    user_options->restore_timer       = 0;
+    user_options->session             = "benchmark";
+    user_options->show                = false;
+    user_options->status              = false;
+    user_options->status_timer        = 0;
+    user_options->speed_only          = true;
+    user_options->progress_only       = false;
+    user_options->weak_hash_threshold = 0;
 
     if (user_options->workload_profile_chgd == false)
     {
       user_options->workload_profile = 3;
     }
+  }
 
-    if (user_options->powertune_enable == true)
-    {
-      user_options->gpu_temp_disable = false;
-    }
+  if (user_options->progress_only == true)
+  {
+    user_options->speed_only          = true;
   }
 
   if (user_options->keyspace == true)
@@ -956,7 +1075,7 @@ void user_options_preprocess (user_options_t *user_options)
     user_options->quiet               = true;
     user_options->opencl_platforms    = NULL;
     user_options->opencl_devices      = NULL;
-    user_options->opencl_device_types = mystrdup ("1,2,3");
+    user_options->opencl_device_types = hcstrdup ("1,2,3");
   }
 
   if (user_options->left == true)
@@ -1026,11 +1145,11 @@ void user_options_preprocess (user_options_t *user_options)
 
   if (user_options->attack_mode == ATTACK_MODE_BF)
   {
-    if (user_options->benchmark == true)
+    if (user_options->opencl_info == true)
     {
 
     }
-    else if (user_options->opencl_info == true)
+    else if (user_options->speed_only == true)
     {
 
     }
@@ -1070,8 +1189,24 @@ void user_options_preprocess (user_options_t *user_options)
   }
 }
 
-void user_options_extra_init (const user_options_t *user_options, user_options_extra_t *user_options_extra)
+void user_options_postprocess (hashcat_ctx_t *hashcat_ctx)
 {
+  user_options_t       *user_options       = hashcat_ctx->user_options;
+  user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+
+  // automatic status
+
+  if (user_options_extra->wordlist_mode == WL_MODE_STDIN)
+  {
+    user_options->status = true;
+  }
+}
+
+void user_options_extra_init (hashcat_ctx_t *hashcat_ctx)
+{
+  user_options_t       *user_options       = hashcat_ctx->user_options;
+  user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+
   // attack-kern
 
   user_options_extra->attack_kern = ATTACK_KERN_NONE;
@@ -1089,23 +1224,6 @@ void user_options_extra_init (const user_options_t *user_options, user_options_e
 
   user_options_extra->rule_len_l = (int) strlen (user_options->rule_buf_l);
   user_options_extra->rule_len_r = (int) strlen (user_options->rule_buf_r);
-
-  // wordlist_mode
-
-  user_options_extra->wordlist_mode = WL_MODE_NONE;
-
-  if (user_options_extra->attack_kern == ATTACK_KERN_STRAIGHT)
-  {
-    user_options_extra->wordlist_mode = (user_options->hc_argc >= 2) ? WL_MODE_FILE : WL_MODE_STDIN;
-  }
-  else if (user_options_extra->attack_kern == ATTACK_KERN_COMBI)
-  {
-    user_options_extra->wordlist_mode = WL_MODE_FILE;
-  }
-  else if (user_options_extra->attack_kern == ATTACK_KERN_BF)
-  {
-    user_options_extra->wordlist_mode = WL_MODE_MASK;
-  }
 
   // hc_hash and hc_work*
 
@@ -1137,75 +1255,497 @@ void user_options_extra_init (const user_options_t *user_options, user_options_e
     user_options_extra->hc_workc = user_options->hc_argc - 1;
     user_options_extra->hc_workv = user_options->hc_argv + 1;
   }
+
+  // wordlist_mode
+
+  user_options_extra->wordlist_mode = WL_MODE_NONE;
+
+  if (user_options_extra->attack_kern == ATTACK_KERN_STRAIGHT)
+  {
+    user_options_extra->wordlist_mode = (user_options_extra->hc_workc >= 1) ? WL_MODE_FILE : WL_MODE_STDIN;
+  }
+  else if (user_options_extra->attack_kern == ATTACK_KERN_COMBI)
+  {
+    user_options_extra->wordlist_mode = WL_MODE_FILE;
+  }
+  else if (user_options_extra->attack_kern == ATTACK_KERN_BF)
+  {
+    user_options_extra->wordlist_mode = WL_MODE_MASK;
+  }
 }
 
-void user_options_extra_destroy (user_options_extra_t *user_options_extra)
+void user_options_extra_destroy (hashcat_ctx_t *hashcat_ctx)
 {
+  user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+
   memset (user_options_extra, 0, sizeof (user_options_extra_t));
 }
 
-void user_options_logger (const user_options_t *user_options, const logfile_ctx_t *logfile_ctx)
+u64 user_options_extra_amplifier (hashcat_ctx_t *hashcat_ctx)
 {
-  logfile_top_uint   (user_options->benchmark);
-  logfile_top_uint   (user_options->force);
-  logfile_top_uint   (user_options->gpu_temp_disable);
-  logfile_top_uint   (user_options->hex_charset);
-  logfile_top_uint   (user_options->hex_salt);
-  logfile_top_uint   (user_options->hex_wordlist);
-  logfile_top_uint   (user_options->increment);
-  logfile_top_uint   (user_options->keyspace);
-  logfile_top_uint   (user_options->left);
-  logfile_top_uint   (user_options->logfile_disable);
-  logfile_top_uint   (user_options->loopback);
-  logfile_top_uint   (user_options->machine_readable);
-  logfile_top_uint   (user_options->markov_classic);
-  logfile_top_uint   (user_options->markov_disable);
-  logfile_top_uint   (user_options->opencl_info);
-  logfile_top_uint   (user_options->outfile_autohex);
-  logfile_top_uint   (user_options->potfile_disable);
-  logfile_top_uint   (user_options->powertune_enable);
-  logfile_top_uint   (user_options->quiet);
-  logfile_top_uint   (user_options->remove);
-  logfile_top_uint   (user_options->restore);
-  logfile_top_uint   (user_options->restore_disable);
-  logfile_top_uint   (user_options->show);
-  logfile_top_uint   (user_options->status);
-  logfile_top_uint   (user_options->stdout_flag);
-  logfile_top_uint   (user_options->usage);
-  logfile_top_uint   (user_options->username);
-  logfile_top_uint   (user_options->version);
-  logfile_top_uint   (user_options->attack_mode);
-  logfile_top_uint   (user_options->bitmap_max);
-  logfile_top_uint   (user_options->bitmap_min);
-  logfile_top_uint   (user_options->debug_mode);
-  logfile_top_uint   (user_options->gpu_temp_abort);
-  logfile_top_uint   (user_options->gpu_temp_retain);
-  logfile_top_uint   (user_options->hash_mode);
-  logfile_top_uint   (user_options->increment_max);
-  logfile_top_uint   (user_options->increment_min);
-  logfile_top_uint   (user_options->kernel_accel);
-  logfile_top_uint   (user_options->kernel_loops);
-  logfile_top_uint   (user_options->markov_threshold);
-  logfile_top_uint   (user_options->nvidia_spin_damp);
-  logfile_top_uint   (user_options->opencl_vector_width);
-  logfile_top_uint   (user_options->outfile_check_timer);
-  logfile_top_uint   (user_options->outfile_format);
-  logfile_top_uint   (user_options->remove_timer);
-  logfile_top_uint   (user_options->restore_timer);
-  logfile_top_uint   (user_options->rp_files_cnt);
-  logfile_top_uint   (user_options->rp_gen);
-  logfile_top_uint   (user_options->rp_gen_func_max);
-  logfile_top_uint   (user_options->rp_gen_func_min);
-  logfile_top_uint   (user_options->rp_gen_seed);
-  logfile_top_uint   (user_options->runtime);
-  logfile_top_uint   (user_options->scrypt_tmto);
-  logfile_top_uint   (user_options->segment_size);
-  logfile_top_uint   (user_options->status_timer);
-  logfile_top_uint   (user_options->veracrypt_pim);
-  logfile_top_uint   (user_options->weak_hash_threshold);
-  logfile_top_uint   (user_options->workload_profile);
-  logfile_top_uint64 (user_options->limit);
-  logfile_top_uint64 (user_options->skip);
+  const combinator_ctx_t     *combinator_ctx     = hashcat_ctx->combinator_ctx;
+  const mask_ctx_t           *mask_ctx           = hashcat_ctx->mask_ctx;
+  const straight_ctx_t       *straight_ctx       = hashcat_ctx->straight_ctx;
+  const user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+
+  if (user_options_extra->attack_kern == ATTACK_KERN_STRAIGHT)
+  {
+    if (straight_ctx->kernel_rules_cnt)
+    {
+      return straight_ctx->kernel_rules_cnt;
+    }
+  }
+  else if (user_options_extra->attack_kern == ATTACK_KERN_COMBI)
+  {
+    if (combinator_ctx->combs_cnt)
+    {
+      return combinator_ctx->combs_cnt;
+    }
+  }
+  else if (user_options_extra->attack_kern == ATTACK_KERN_BF)
+  {
+    if (mask_ctx->bfs_cnt)
+    {
+      return mask_ctx->bfs_cnt;
+    }
+  }
+
+  return 1;
+}
+
+int user_options_check_files (hashcat_ctx_t *hashcat_ctx)
+{
+  dictstat_ctx_t       *dictstat_ctx       = hashcat_ctx->dictstat_ctx;
+  folder_config_t      *folder_config      = hashcat_ctx->folder_config;
+  logfile_ctx_t        *logfile_ctx        = hashcat_ctx->logfile_ctx;
+  outcheck_ctx_t       *outcheck_ctx       = hashcat_ctx->outcheck_ctx;
+  outfile_ctx_t        *outfile_ctx        = hashcat_ctx->outfile_ctx;
+  pidfile_ctx_t        *pidfile_ctx        = hashcat_ctx->pidfile_ctx;
+  potfile_ctx_t        *potfile_ctx        = hashcat_ctx->potfile_ctx;
+  user_options_extra_t *user_options_extra = hashcat_ctx->user_options_extra;
+  user_options_t       *user_options       = hashcat_ctx->user_options;
+
+  // common folders
+
+  if (hc_path_read (folder_config->cwd) == false)
+  {
+    event_log_error (hashcat_ctx, "%s: %s", folder_config->cwd, strerror (errno));
+
+    return -1;
+  }
+
+  if (hc_path_read (folder_config->install_dir) == false)
+  {
+    event_log_error (hashcat_ctx, "%s: %s", folder_config->install_dir, strerror (errno));
+
+    return -1;
+  }
+
+  if (hc_path_read (folder_config->profile_dir) == false)
+  {
+    event_log_error (hashcat_ctx, "%s: %s", folder_config->profile_dir, strerror (errno));
+
+    return -1;
+  }
+
+  if (hc_path_write (folder_config->session_dir) == false)
+  {
+    event_log_error (hashcat_ctx, "%s: %s", folder_config->session_dir, strerror (errno));
+
+    return -1;
+  }
+
+  if (hc_path_read (folder_config->shared_dir) == false)
+  {
+    event_log_error (hashcat_ctx, "%s: %s", folder_config->shared_dir, strerror (errno));
+
+    return -1;
+  }
+
+  if (hc_path_read (folder_config->cpath_real) == false)
+  {
+    event_log_error (hashcat_ctx, "%s: %s", folder_config->cpath_real, strerror (errno));
+
+    return -1;
+  }
+
+  // hashfile - can be NULL
+
+  if (user_options_extra->hc_hash != NULL)
+  {
+    if (hc_path_exist (user_options_extra->hc_hash) == true)
+    {
+      if (hc_path_read (user_options_extra->hc_hash) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", user_options_extra->hc_hash, strerror (errno));
+
+        return -1;
+      }
+    }
+  }
+
+  // arguments - checks must depend on attack_mode
+
+  if (user_options->attack_mode == ATTACK_MODE_STRAIGHT)
+  {
+    for (int i = 0; i < user_options_extra->hc_workc; i++)
+    {
+      char *wlfile = user_options_extra->hc_workv[i];
+
+      if (hc_path_exist (wlfile) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", wlfile, strerror (errno));
+
+        return -1;
+      }
+    }
+
+    for (int i = 0; i < (int) user_options->rp_files_cnt; i++)
+    {
+      char *rp_file = user_options->rp_files[i];
+
+      if (hc_path_exist (rp_file) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", rp_file, strerror (errno));
+
+        return -1;
+      }
+    }
+  }
+  else if (user_options->attack_mode == ATTACK_MODE_COMBI)
+  {
+    // mode easy mode here because both files must exist and readable
+
+    if (user_options_extra->hc_workc == 2)
+    {
+      char *dictfile1 = user_options_extra->hc_workv[0];
+      char *dictfile2 = user_options_extra->hc_workv[1];
+
+      if (hc_path_read (dictfile1) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", dictfile1, strerror (errno));
+
+        return -1;
+      }
+
+      if (hc_path_read (dictfile2) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", dictfile2, strerror (errno));
+
+        return -1;
+      }
+    }
+  }
+  else if (user_options->attack_mode == ATTACK_MODE_BF)
+  {
+    // if the file exist it's a maskfile and then it must be readable
+
+    if (user_options_extra->hc_workc == 1)
+    {
+      char *maskfile = user_options_extra->hc_workv[0];
+
+      if (hc_path_exist (maskfile) == true)
+      {
+        if (hc_path_read (maskfile) == false)
+        {
+          event_log_error (hashcat_ctx, "%s: %s", maskfile, strerror (errno));
+
+          return -1;
+        }
+      }
+    }
+  }
+  else if (user_options->attack_mode == ATTACK_MODE_HYBRID1)
+  {
+    if (user_options_extra->hc_workc == 2)
+    {
+      char *wlfile = user_options_extra->hc_workv[0];
+
+      char *maskfile = user_options_extra->hc_workv[1];
+
+      // for wordlist: can be folder
+
+      if (hc_path_exist (wlfile) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", wlfile, strerror (errno));
+
+        return -1;
+      }
+
+      // for mask: if the file exist it's a maskfile and then it must be readable
+
+      if (hc_path_exist (maskfile) == true)
+      {
+        if (hc_path_read (maskfile) == false)
+        {
+          event_log_error (hashcat_ctx, "%s: %s", maskfile, strerror (errno));
+
+          return -1;
+        }
+      }
+    }
+  }
+  else if (user_options->attack_mode == ATTACK_MODE_HYBRID2)
+  {
+    if (user_options_extra->hc_workc == 2)
+    {
+      char *wlfile = user_options_extra->hc_workv[1];
+
+      char *maskfile = user_options_extra->hc_workv[0];
+
+      // for wordlist: can be folder
+
+      if (hc_path_exist (wlfile) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", wlfile, strerror (errno));
+
+        return -1;
+      }
+
+      // for mask: if the file exist it's a maskfile and then it must be readable
+
+      if (hc_path_exist (maskfile) == true)
+      {
+        if (hc_path_read (maskfile) == false)
+        {
+          event_log_error (hashcat_ctx, "%s: %s", maskfile, strerror (errno));
+
+          return -1;
+        }
+      }
+    }
+  }
+
+  // logfile
+
+  if (logfile_ctx->enabled == true)
+  {
+    if (hc_path_exist (logfile_ctx->logfile) == true)
+    {
+      if (hc_path_write (logfile_ctx->logfile) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", logfile_ctx->logfile, strerror (errno));
+
+        return -1;
+      }
+    }
+    else
+    {
+      if (hc_path_create (logfile_ctx->logfile) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", logfile_ctx->logfile, strerror (errno));
+
+        return -1;
+      }
+    }
+  }
+
+  // outfile_check
+
+  if (outcheck_ctx->enabled == true)
+  {
+    if (hc_path_exist (outcheck_ctx->root_directory) == true)
+    {
+      const bool is_dir = hc_path_is_directory (outcheck_ctx->root_directory);
+
+      if (is_dir == false)
+      {
+        event_log_error (hashcat_ctx, "Directory specified in outfile-check '%s' is not a directory", outcheck_ctx->root_directory);
+
+        return -1;
+      }
+    }
+  }
+
+  // outfile - can be NULL
+
+  if (outfile_ctx->filename != NULL)
+  {
+    if (hc_path_exist (outfile_ctx->filename) == true)
+    {
+      if (hc_path_write (outfile_ctx->filename) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", outfile_ctx->filename, strerror (errno));
+
+        return -1;
+      }
+    }
+    else
+    {
+      if (hc_path_create (outfile_ctx->filename) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", outfile_ctx->filename, strerror (errno));
+
+        return -1;
+      }
+    }
+  }
+
+  // check for hashfile vs outfile (should not point to the same physical file)
+
+  if ((user_options_extra->hc_hash != NULL) && (outfile_ctx->filename != NULL))
+  {
+    char *hashfile = user_options_extra->hc_hash;
+
+    char *outfile = outfile_ctx->filename;
+
+    hc_stat_t tmpstat_outfile;
+    hc_stat_t tmpstat_hashfile;
+
+    memset (&tmpstat_outfile,  0, sizeof (tmpstat_outfile));
+    memset (&tmpstat_hashfile, 0, sizeof (tmpstat_hashfile));
+
+    int do_check = 0;
+
+    FILE *tmp_outfile_fp = fopen (outfile, "r");
+
+    if (tmp_outfile_fp)
+    {
+      if (hc_fstat (fileno (tmp_outfile_fp), &tmpstat_outfile))
+      {
+        fclose (tmp_outfile_fp);
+
+        return -1;
+      }
+
+      fclose (tmp_outfile_fp);
+
+      do_check++;
+    }
+
+    FILE *tmp_hashfile_fp = fopen (hashfile, "r");
+
+    if (tmp_hashfile_fp)
+    {
+      if (hc_fstat (fileno (tmp_hashfile_fp), &tmpstat_hashfile))
+      {
+        fclose (tmp_hashfile_fp);
+
+        return -1;
+      }
+
+      fclose (tmp_hashfile_fp);
+
+      do_check++;
+    }
+
+    if (do_check == 2)
+    {
+      tmpstat_outfile.st_mode     = 0;
+      tmpstat_outfile.st_nlink    = 0;
+      tmpstat_outfile.st_uid      = 0;
+      tmpstat_outfile.st_gid      = 0;
+      tmpstat_outfile.st_rdev     = 0;
+      tmpstat_outfile.st_atime    = 0;
+
+      tmpstat_hashfile.st_mode    = 0;
+      tmpstat_hashfile.st_nlink   = 0;
+      tmpstat_hashfile.st_uid     = 0;
+      tmpstat_hashfile.st_gid     = 0;
+      tmpstat_hashfile.st_rdev    = 0;
+      tmpstat_hashfile.st_atime   = 0;
+
+      #if defined (_POSIX)
+      tmpstat_outfile.st_blksize  = 0;
+      tmpstat_outfile.st_blocks   = 0;
+
+      tmpstat_hashfile.st_blksize = 0;
+      tmpstat_hashfile.st_blocks  = 0;
+      #endif
+
+      if (memcmp (&tmpstat_outfile, &tmpstat_hashfile, sizeof (hc_stat_t)) == 0)
+      {
+        event_log_error (hashcat_ctx, "Hashfile and Outfile are not allowed to point to the same file");
+
+        return -1;
+      }
+    }
+  }
+
+  // pidfile
+
+  if (hc_path_exist (pidfile_ctx->filename) == true)
+  {
+    if (hc_path_write (pidfile_ctx->filename) == false)
+    {
+      event_log_error (hashcat_ctx, "%s: %s", pidfile_ctx->filename, strerror (errno));
+
+      return -1;
+    }
+  }
+  else
+  {
+    if (hc_path_create (pidfile_ctx->filename) == false)
+    {
+      event_log_error (hashcat_ctx, "%s: %s", pidfile_ctx->filename, strerror (errno));
+
+      return -1;
+    }
+  }
+
+  // potfile
+
+  if (potfile_ctx->enabled == true)
+  {
+    if (hc_path_exist (potfile_ctx->filename) == true)
+    {
+      if (hc_path_write (potfile_ctx->filename) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", potfile_ctx->filename, strerror (errno));
+
+        return -1;
+      }
+    }
+    else
+    {
+      if (hc_path_create (potfile_ctx->filename) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", potfile_ctx->filename, strerror (errno));
+
+        return -1;
+      }
+    }
+  }
+
+  // dictstat
+
+  if (dictstat_ctx->enabled == true)
+  {
+    if (hc_path_exist (dictstat_ctx->filename) == true)
+    {
+      if (hc_path_write (dictstat_ctx->filename) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", dictstat_ctx->filename, strerror (errno));
+
+        return -1;
+      }
+    }
+    else
+    {
+      if (hc_path_create (dictstat_ctx->filename) == false)
+      {
+        event_log_error (hashcat_ctx, "%s: %s", dictstat_ctx->filename, strerror (errno));
+
+        return -1;
+      }
+    }
+  }
+
+  // loopback - can't check at this point
+
+  // tuning file check already done
+
+  // debugfile check already done
+
+  return 0;
+}
+
+void user_options_logger (hashcat_ctx_t *hashcat_ctx)
+{
+  user_options_t *user_options = hashcat_ctx->user_options;
+  logfile_ctx_t  *logfile_ctx  = hashcat_ctx->logfile_ctx;
+
+  logfile_top_char   (user_options->separator);
   logfile_top_string (user_options->cpu_affinity);
   logfile_top_string (user_options->custom_charset_1);
   logfile_top_string (user_options->custom_charset_2);
@@ -1220,11 +1760,74 @@ void user_options_logger (const user_options_t *user_options, const logfile_ctx_
   logfile_top_string (user_options->outfile);
   logfile_top_string (user_options->outfile_check_dir);
   logfile_top_string (user_options->potfile_path);
+  logfile_top_string (user_options->restore_file_path);
   logfile_top_string (user_options->rp_files[0]);
   logfile_top_string (user_options->rule_buf_l);
   logfile_top_string (user_options->rule_buf_r);
-  logfile_top_char   (user_options->separator);
   logfile_top_string (user_options->session);
   logfile_top_string (user_options->truecrypt_keyfiles);
   logfile_top_string (user_options->veracrypt_keyfiles);
+  logfile_top_uint64 (user_options->limit);
+  logfile_top_uint64 (user_options->skip);
+  logfile_top_uint   (user_options->attack_mode);
+  logfile_top_uint   (user_options->benchmark);
+  logfile_top_uint   (user_options->bitmap_max);
+  logfile_top_uint   (user_options->bitmap_min);
+  logfile_top_uint   (user_options->debug_mode);
+  logfile_top_uint   (user_options->force);
+  logfile_top_uint   (user_options->gpu_temp_abort);
+  logfile_top_uint   (user_options->gpu_temp_disable);
+  logfile_top_uint   (user_options->gpu_temp_retain);
+  logfile_top_uint   (user_options->hash_mode);
+  logfile_top_uint   (user_options->hex_charset);
+  logfile_top_uint   (user_options->hex_salt);
+  logfile_top_uint   (user_options->hex_wordlist);
+  logfile_top_uint   (user_options->increment);
+  logfile_top_uint   (user_options->increment_max);
+  logfile_top_uint   (user_options->increment_min);
+  logfile_top_uint   (user_options->keep_guessing);
+  logfile_top_uint   (user_options->kernel_accel);
+  logfile_top_uint   (user_options->kernel_loops);
+  logfile_top_uint   (user_options->keyspace);
+  logfile_top_uint   (user_options->left);
+  logfile_top_uint   (user_options->logfile_disable);
+  logfile_top_uint   (user_options->loopback);
+  logfile_top_uint   (user_options->machine_readable);
+  logfile_top_uint   (user_options->markov_classic);
+  logfile_top_uint   (user_options->markov_disable);
+  logfile_top_uint   (user_options->markov_threshold);
+  logfile_top_uint   (user_options->nvidia_spin_damp);
+  logfile_top_uint   (user_options->opencl_info);
+  logfile_top_uint   (user_options->opencl_vector_width);
+  logfile_top_uint   (user_options->outfile_autohex);
+  logfile_top_uint   (user_options->outfile_check_timer);
+  logfile_top_uint   (user_options->outfile_format);
+  logfile_top_uint   (user_options->potfile_disable);
+  logfile_top_uint   (user_options->powertune_enable);
+  logfile_top_uint   (user_options->quiet);
+  logfile_top_uint   (user_options->remove);
+  logfile_top_uint   (user_options->remove_timer);
+  logfile_top_uint   (user_options->restore);
+  logfile_top_uint   (user_options->restore_disable);
+  logfile_top_uint   (user_options->restore_timer);
+  logfile_top_uint   (user_options->rp_files_cnt);
+  logfile_top_uint   (user_options->rp_gen);
+  logfile_top_uint   (user_options->rp_gen_func_max);
+  logfile_top_uint   (user_options->rp_gen_func_min);
+  logfile_top_uint   (user_options->rp_gen_seed);
+  logfile_top_uint   (user_options->runtime);
+  logfile_top_uint   (user_options->scrypt_tmto);
+  logfile_top_uint   (user_options->segment_size);
+  logfile_top_uint   (user_options->show);
+  logfile_top_uint   (user_options->status);
+  logfile_top_uint   (user_options->status_timer);
+  logfile_top_uint   (user_options->stdout_flag);
+  logfile_top_uint   (user_options->speed_only);
+  logfile_top_uint   (user_options->progress_only);
+  logfile_top_uint   (user_options->usage);
+  logfile_top_uint   (user_options->username);
+  logfile_top_uint   (user_options->veracrypt_pim);
+  logfile_top_uint   (user_options->version);
+  logfile_top_uint   (user_options->weak_hash_threshold);
+  logfile_top_uint   (user_options->workload_profile);
 }

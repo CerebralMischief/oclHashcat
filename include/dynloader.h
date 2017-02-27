@@ -8,16 +8,14 @@
 
 #include <stdlib.h>
 
-#if defined (_POSIX)
+#ifdef _WIN
+#include <windows.h>
+#else
 #include <dlfcn.h>
 #if defined (__APPLE__)
 #include <mach-o/dyld.h>
 #endif // __APPLE__
-#endif // _POSIX
-
-#ifdef _WIN
-#include <windows.h>
-#endif
+#endif // _WIN
 
 #ifdef _WIN
 HMODULE hc_dlopen  (LPCSTR lpLibFileName);
@@ -34,11 +32,11 @@ void *hc_dlsym   (void *module, const char *symbol);
   if (noerr != -1) { \
     if (!ptr->name) { \
       if (noerr == 1) { \
-        log_error ("ERROR: %s is missing from %s shared library.", #name, #libname); \
-        exit (-1); \
-      } else { \
-        log_info ("WARNING: %s is missing from %s shared library.", #name, #libname); \
+        event_log_error (hashcat_ctx, "%s is missing from %s shared library.", #name, #libname); \
         return -1; \
+      } else { \
+        event_log_warning (hashcat_ctx, "%s is missing from %s shared library.", #name, #libname); \
+        return 0; \
       } \
     } \
   }
@@ -48,11 +46,11 @@ void *hc_dlsym   (void *module, const char *symbol);
   if (noerr != -1) { \
     if (!ptr->name) { \
       if (noerr == 1) { \
-        log_error ("ERROR: %s is missing from %s shared library.", #name, #libname); \
-        exit (-1); \
-      } else { \
-        log_info ("WARNING: %s is missing from %s shared library.", #name, #libname); \
+        event_log_error (hashcat_ctx, "%s is missing from %s shared library.", #name, #libname); \
         return -1; \
+      } else { \
+        event_log_warning (hashcat_ctx, "%s is missing from %s shared library.", #name, #libname); \
+        return 0; \
       } \
     } \
   }
@@ -61,13 +59,12 @@ void *hc_dlsym   (void *module, const char *symbol);
   ptr->name = (type) (*ptr->func) (addr); \
   if (!ptr->name) { \
     if (noerr == 1) { \
-      log_error ("ERROR: %s at address %08x is missing from %s shared library.", #name, addr, #libname); \
-      exit (-1); \
-    } else { \
-      log_error ("WARNING: %s at address %08x is missing from %s shared library.", #name, addr, #libname); \
+      event_log_error (hashcat_ctx, "%s at address %08x is missing from %s shared library.", #name, addr, #libname); \
       return -1; \
+    } else { \
+      event_log_warning (hashcat_ctx, "%s at address %08x is missing from %s shared library.", #name, addr, #libname); \
+      return 0; \
     } \
   }
 
 #endif // _DYNALOADER_H
-

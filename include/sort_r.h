@@ -28,7 +28,7 @@ Slightly modified to work with hashcat to no falsly detect _SORT_R_LINUX with mi
      defined __FreeBSD__ || defined __DragonFly__)
 #  define _SORT_R_BSD
 #  define _SORT_R_INLINE inline
-#elif (defined __linux__)
+#elif (defined __linux__) || defined (__CYGWIN__)
 #  define _SORT_R_LINUX
 #  define _SORT_R_INLINE inline
 #elif (defined _WIN32 || defined _WIN64 || defined __WINDOWS__)
@@ -49,9 +49,9 @@ static _SORT_R_INLINE int sort_r_cmpswap(char *__restrict a, char *__restrict b,
                                                        void *_arg),
                                          void *arg)
 {
-  char tmp, *end = a+w;
+  char *end = a+w;
   if(compar(a, b, arg) > 0) {
-    for(; a < end; a++, b++) { tmp = *a; *a = *b; *b = tmp; }
+    for(; a < end; a++, b++) { char tmp = *a; *a = *b; *b = tmp; }
     return 1;
   }
   return 0;
@@ -77,7 +77,7 @@ static _SORT_R_INLINE void sort_r_simple(void *base, size_t nel, size_t w,
     /* nel > 6; Quicksort */
 
     /* Use median of first, middle and last items as pivot */
-    char *x, *y, *xend, ch;
+    char *x, *y, *xend;
     char *pl, *pr;
     char *last = b+w*(nel-1), *tmp;
     char *l[3];
@@ -93,7 +93,7 @@ static _SORT_R_INLINE void sort_r_simple(void *base, size_t nel, size_t w,
 
     /* swap l[id], l[2] to put pivot as last element */
     for(x = l[1], y = last, xend = x+w; x<xend; x++, y++) {
-      ch = *x; *x = *y; *y = ch;
+      char ch = *x; *x = *y; *y = ch;
     }
 
     pl = b;
@@ -118,7 +118,6 @@ static _SORT_R_INLINE void sort_r_simple(void *base, size_t nel, size_t w,
     sort_r_simple(pl+w, (end-(pl+w))/w, w, compar, arg);
   }
 }
-
 
 #if defined NESTED_QSORT
 

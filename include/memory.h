@@ -6,15 +6,16 @@
 #ifndef _MEMORY_H
 #define _MEMORY_H
 
+#include <stdio.h>
 #include <string.h>
 #include <stdlib.h>
 
 #define MSG_ENOMEM "Insufficient memory available"
 
-void *mycalloc (size_t nmemb, size_t size);
-void myfree (void *ptr);
-void *mymalloc (size_t size);
-void *myrealloc (void *ptr, size_t oldsz, size_t add);
-char *mystrdup (const char *s);
+void *hccalloc  (const size_t nmemb, const size_t sz);
+void *hcmalloc  (const size_t sz);
+void *hcrealloc (void *ptr, const size_t oldsz, const size_t addsz);
+char *hcstrdup  (const char *s);
+void  hcfree    (void *ptr);
 
 #endif // _MEMORY_H

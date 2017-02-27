@@ -5,38 +5,65 @@
 
 #include "common.h"
 #include "types.h"
-#include "logging.h"
+#include "event.h"
 #include "memory.h"
 #include "hwmon.h"
 #include "timer.h"
 #include "hashes.h"
 #include "thread.h"
 #include "restore.h"
-#include "terminal.h"
-#include "status.h"
 #include "shared.h"
+#include "status.h"
 #include "monitor.h"
 
-static void monitor (hashcat_ctx_t *hashcat_ctx)
+int get_runtime_left (const hashcat_ctx_t *hashcat_ctx)
 {
-  hashconfig_t         *hashconfig         = hashcat_ctx->hashconfig;
-  hashes_t             *hashes             = hashcat_ctx->hashes;
-  hwmon_ctx_t          *hwmon_ctx          = hashcat_ctx->hwmon_ctx;
-  opencl_ctx_t         *opencl_ctx         = hashcat_ctx->opencl_ctx;
-  restore_ctx_t        *restore_ctx        = hashcat_ctx->restore_ctx;
-  status_ctx_t         *status_ctx         = hashcat_ctx->status_ctx;
-  user_options_t       *user_options       = hashcat_ctx->user_options;
+  const status_ctx_t   *status_ctx   = hashcat_ctx->status_ctx;
+  const user_options_t *user_options = hashcat_ctx->user_options;
 
-  bool runtime_check = false;
-  bool remove_check  = false;
-  bool status_check  = false;
-  bool restore_check = false;
-  bool hwmon_check   = false;
+  double msec_paused = status_ctx->msec_paused;
 
-  const int sleep_time        = 1;
-  const int temp_threshold    = 1;  // degrees celcius
-  const int fan_speed_min     = 15; // in percentage
-  const int fan_speed_max     = 100;
+  if (status_ctx->devices_status == STATUS_PAUSED)
+  {
+    double msec_paused_tmp = hc_timer_get (status_ctx->timer_paused);
+
+    msec_paused += msec_paused_tmp;
+  }
+
+  time_t runtime_cur;
+
+  time (&runtime_cur);
+
+  const int runtime_left = (int) (status_ctx->runtime_start
+                                + user_options->runtime
+                                + (msec_paused / 1000)
+                                - runtime_cur);
+
+  return runtime_left;
+}
+
+static int monitor (hashcat_ctx_t *hashcat_ctx)
+{
+  hashes_t       *hashes        = hashcat_ctx->hashes;
+  hwmon_ctx_t    *hwmon_ctx     = hashcat_ctx->hwmon_ctx;
+  opencl_ctx_t   *opencl_ctx    = hashcat_ctx->opencl_ctx;
+  restore_ctx_t  *restore_ctx   = hashcat_ctx->restore_ctx;
+  status_ctx_t   *status_ctx    = hashcat_ctx->status_ctx;
+  user_options_t *user_options  = hashcat_ctx->user_options;
+
+  bool runtime_check      = false;
+  bool remove_check       = false;
+  bool status_check       = false;
+  bool restore_check      = false;
+  bool hwmon_check        = false;
+  bool performance_check  = false;
+
+  const int   sleep_time      = 1;
+  const int   temp_threshold  = 1;      // degrees celcius
+  const int   fan_speed_min   = 33;     // in percentage
+  const int   fan_speed_max   = 100;
+  const float exec_low        = 50.0f;  // in ms
+  const float util_low        = 90.0f;  // in percent
 
   if (user_options->runtime)
   {
@@ -63,29 +90,42 @@ static void monitor (hashcat_ctx_t *hashcat_ctx)
     hwmon_check = true;
   }
 
-  if ((runtime_check == false) && (remove_check == false) && (status_check == false) && (restore_check == false) && (hwmon_check == false))
+  if (hwmon_ctx->enabled == true)
   {
-    return;
+    performance_check = true; // this check simply requires hwmon to work
+  }
+
+  if ((runtime_check == false) && (remove_check == false) && (status_check == false) && (restore_check == false) && (hwmon_check == false) && (performance_check == false))
+  {
+    return 0;
   }
 
   // these variables are mainly used for fan control
 
-  int *fan_speed_chgd = (int *) mycalloc (opencl_ctx->devices_cnt, sizeof (int));
+  int fan_speed_chgd[DEVICES_MAX];
+
+  memset (fan_speed_chgd, 0, sizeof (fan_speed_chgd));
 
   // temperature controller "loopback" values
 
-  int *temp_diff_old = (int *) mycalloc (opencl_ctx->devices_cnt, sizeof (int));
-  int *temp_diff_sum = (int *) mycalloc (opencl_ctx->devices_cnt, sizeof (int));
+  int temp_diff_old[DEVICES_MAX];
+  int temp_diff_sum[DEVICES_MAX];
+
+  memset (temp_diff_old, 0, sizeof (temp_diff_old));
+  memset (temp_diff_sum, 0, sizeof (temp_diff_sum));
+
+  // timer
 
   time_t last_temp_check_time;
 
   time (&last_temp_check_time);
 
-  u32 slowdown_warnings = 0;
+  u32 slowdown_warnings    = 0;
+  u32 performance_warnings = 0;
 
-  u32 restore_left = user_options->restore_timer;
-  u32 remove_left  = user_options->remove_timer;
-  u32 status_left  = user_options->status_timer;
+  u32 restore_left  = user_options->restore_timer;
+  u32 remove_left   = user_options->remove_timer;
+  u32 status_left   = user_options->status_timer;
 
   while (status_ctx->shutdown_inner == false)
   {
@@ -101,50 +141,23 @@ static void monitor (hashcat_ctx_t *hashcat_ctx)
       {
         hc_device_param_t *device_param = &opencl_ctx->devices_param[device_id];
 
-        if (device_param->skipped) continue;
+        if (device_param->skipped == true) continue;
 
-        if (device_param->device_vendor_id == VENDOR_ID_NV)
+        const int rc_throttle = hm_get_throttle_with_device_id (hashcat_ctx, device_id);
+
+        if (rc_throttle == -1) continue;
+
+        if (rc_throttle > 0)
         {
-          if (hwmon_ctx->hm_nvapi)
-          {
-            NV_GPU_PERF_POLICIES_INFO_PARAMS_V1   perfPolicies_info;
-            NV_GPU_PERF_POLICIES_STATUS_PARAMS_V1 perfPolicies_status;
+          slowdown_warnings++;
 
-            memset (&perfPolicies_info,   0, sizeof (NV_GPU_PERF_POLICIES_INFO_PARAMS_V1));
-            memset (&perfPolicies_status, 0, sizeof (NV_GPU_PERF_POLICIES_STATUS_PARAMS_V1));
-
-            perfPolicies_info.version   = MAKE_NVAPI_VERSION (NV_GPU_PERF_POLICIES_INFO_PARAMS_V1, 1);
-            perfPolicies_status.version = MAKE_NVAPI_VERSION (NV_GPU_PERF_POLICIES_STATUS_PARAMS_V1, 1);
-
-            hm_NvAPI_GPU_GetPerfPoliciesInfo (hwmon_ctx->hm_nvapi, hwmon_ctx->hm_device[device_id].nvapi, &perfPolicies_info);
-
-            perfPolicies_status.info_value = perfPolicies_info.info_value;
-
-            hm_NvAPI_GPU_GetPerfPoliciesStatus (hwmon_ctx->hm_nvapi, hwmon_ctx->hm_device[device_id].nvapi, &perfPolicies_status);
-
-            if (perfPolicies_status.throttle & 2)
-            {
-              if (slowdown_warnings < 3)
-              {
-                if (user_options->quiet == false) clear_prompt ();
-
-                log_info ("WARNING: Drivers temperature threshold hit on GPU #%d, expect performance to drop...", device_id + 1);
-
-                if (slowdown_warnings == 2)
-                {
-                  log_info ("");
-                }
-
-                if (user_options->quiet == false) send_prompt ();
-
-                slowdown_warnings++;
-              }
-            }
-            else
-            {
-              slowdown_warnings = 0;
-            }
-          }
+          if (slowdown_warnings == 1) EVENT_DATA (EVENT_MONITOR_THROTTLE1, &device_id, sizeof (u32));
+          if (slowdown_warnings == 2) EVENT_DATA (EVENT_MONITOR_THROTTLE2, &device_id, sizeof (u32));
+          if (slowdown_warnings == 3) EVENT_DATA (EVENT_MONITOR_THROTTLE3, &device_id, sizeof (u32));
+        }
+        else
+        {
+          slowdown_warnings = 0;
         }
       }
 
@@ -167,85 +180,93 @@ static void monitor (hashcat_ctx_t *hashcat_ctx)
       {
         hc_device_param_t *device_param = &opencl_ctx->devices_param[device_id];
 
-        if (device_param->skipped) continue;
+        if (device_param->skipped == true) continue;
 
         if ((opencl_ctx->devices_param[device_id].device_type & CL_DEVICE_TYPE_GPU) == 0) continue;
 
-        const int temperature = hm_get_temperature_with_device_id (hwmon_ctx, opencl_ctx, device_id);
+        const int temperature = hm_get_temperature_with_device_id (hashcat_ctx, device_id);
 
         if (temperature > (int) user_options->gpu_temp_abort)
         {
-          log_error ("ERROR: Temperature limit on GPU %d reached, aborting...", device_id + 1);
+          EVENT_DATA (EVENT_MONITOR_TEMP_ABORT, &device_id, sizeof (u32));
 
-          myabort (status_ctx);
-
-          break;
+          myabort (hashcat_ctx);
         }
+
+        if (hwmon_ctx->hm_device[device_id].fanspeed_get_supported == false) continue;
+        if (hwmon_ctx->hm_device[device_id].fanspeed_set_supported == false) continue;
 
         const u32 gpu_temp_retain = user_options->gpu_temp_retain;
 
-        if (gpu_temp_retain)
+        if (gpu_temp_retain > 0)
         {
-          if (hwmon_ctx->hm_device[device_id].fan_set_supported == 1)
+          int temp_cur = temperature;
+
+          int temp_diff_new = (int) gpu_temp_retain - temp_cur;
+
+          temp_diff_sum[device_id] = temp_diff_sum[device_id] + temp_diff_new;
+
+          // calculate Ta value (time difference in seconds between the last check and this check)
+
+          last_temp_check_time = temp_check_time;
+
+          float Kp = 1.6f;
+          float Ki = 0.001f;
+          float Kd = 10.0f;
+
+          // PID controller (3-term controller: proportional - Kp, integral - Ki, derivative - Kd)
+
+          int fan_diff_required = (int) (Kp * (float)temp_diff_new + Ki * Ta * (float)temp_diff_sum[device_id] + Kd * ((float)(temp_diff_new - temp_diff_old[device_id])) / Ta);
+
+          if (abs (fan_diff_required) >= temp_threshold)
           {
-            int temp_cur = temperature;
+            const int fan_speed_cur = hm_get_fanspeed_with_device_id (hashcat_ctx, device_id);
 
-            int temp_diff_new = (int) gpu_temp_retain - temp_cur;
+            int fan_speed_level = fan_speed_cur;
 
-            temp_diff_sum[device_id] = temp_diff_sum[device_id] + temp_diff_new;
+            if (fan_speed_chgd[device_id] == 0) fan_speed_level = temp_cur;
 
-            // calculate Ta value (time difference in seconds between the last check and this check)
+            int fan_speed_new = fan_speed_level - fan_diff_required;
 
-            last_temp_check_time = temp_check_time;
+            if (fan_speed_new > fan_speed_max) fan_speed_new = fan_speed_max;
+            if (fan_speed_new < fan_speed_min) fan_speed_new = fan_speed_min;
 
-            float Kp = 1.8f;
-            float Ki = 0.005f;
-            float Kd = 6;
-
-            // PID controller (3-term controller: proportional - Kp, integral - Ki, derivative - Kd)
-
-            int fan_diff_required = (int) (Kp * (float)temp_diff_new + Ki * Ta * (float)temp_diff_sum[device_id] + Kd * ((float)(temp_diff_new - temp_diff_old[device_id])) / Ta);
-
-            if (abs (fan_diff_required) >= temp_threshold)
+            if (fan_speed_new != fan_speed_cur)
             {
-              const int fan_speed_cur = hm_get_fanspeed_with_device_id (hwmon_ctx, opencl_ctx, device_id);
+              int freely_change_fan_speed = (fan_speed_chgd[device_id] == 1);
+              int fan_speed_must_change = (fan_speed_new > fan_speed_cur);
 
-              int fan_speed_level = fan_speed_cur;
-
-              if (fan_speed_chgd[device_id] == 0) fan_speed_level = temp_cur;
-
-              int fan_speed_new = fan_speed_level - fan_diff_required;
-
-              if (fan_speed_new > fan_speed_max) fan_speed_new = fan_speed_max;
-              if (fan_speed_new < fan_speed_min) fan_speed_new = fan_speed_min;
-
-              if (fan_speed_new != fan_speed_cur)
+              if ((freely_change_fan_speed == 1) || (fan_speed_must_change == 1))
               {
-                int freely_change_fan_speed = (fan_speed_chgd[device_id] == 1);
-                int fan_speed_must_change = (fan_speed_new > fan_speed_cur);
-
-                if ((freely_change_fan_speed == 1) || (fan_speed_must_change == 1))
+                if (device_param->device_vendor_id == VENDOR_ID_AMD)
                 {
-                  if (device_param->device_vendor_id == VENDOR_ID_AMD)
+                  if (hwmon_ctx->hm_adl)
                   {
-                    hm_set_fanspeed_with_device_id_adl (hwmon_ctx, device_id, fan_speed_new, 1);
-                  }
-                  else if (device_param->device_vendor_id == VENDOR_ID_NV)
-                  {
-                    #if defined (_WIN)
-                    hm_set_fanspeed_with_device_id_nvapi (hwmon_ctx, device_id, fan_speed_new, 1);
-                    #endif
-
-                    #if defined (__linux__)
-                    hm_set_fanspeed_with_device_id_xnvctrl (hwmon_ctx, device_id, fan_speed_new);
-                    #endif
+                    hm_set_fanspeed_with_device_id_adl (hashcat_ctx, device_id, fan_speed_new, 1);
                   }
 
-                  fan_speed_chgd[device_id] = 1;
+                  if (hwmon_ctx->hm_sysfs)
+                  {
+                    hm_set_fanspeed_with_device_id_sysfs (hashcat_ctx, device_id, fan_speed_new);
+                  }
+                }
+                else if (device_param->device_vendor_id == VENDOR_ID_NV)
+                {
+                  if (hwmon_ctx->hm_nvapi)
+                  {
+                    hm_set_fanspeed_with_device_id_nvapi (hashcat_ctx, device_id, fan_speed_new, 1);
+                  }
+
+                  if (hwmon_ctx->hm_xnvctrl)
+                  {
+                    hm_set_fanspeed_with_device_id_xnvctrl (hashcat_ctx, device_id, fan_speed_new);
+                  }
                 }
 
-                temp_diff_old[device_id] = temp_diff_new;
+                fan_speed_chgd[device_id] = 1;
               }
+
+              temp_diff_old[device_id] = temp_diff_new;
             }
           }
         }
@@ -260,7 +281,9 @@ static void monitor (hashcat_ctx_t *hashcat_ctx)
 
       if (restore_left == 0)
       {
-        cycle_restore (restore_ctx, opencl_ctx);
+        const int rc = cycle_restore (hashcat_ctx);
+
+        if (rc == -1) return -1;
 
         restore_left = user_options->restore_timer;
       }
@@ -268,29 +291,13 @@ static void monitor (hashcat_ctx_t *hashcat_ctx)
 
     if ((runtime_check == true) && (status_ctx->runtime_start > 0))
     {
-      double ms_paused = status_ctx->ms_paused;
-
-      if (status_ctx->devices_status == STATUS_PAUSED)
-      {
-        double ms_paused_tmp = hc_timer_get (status_ctx->timer_paused);
-
-        ms_paused += ms_paused_tmp;
-      }
-
-      time_t runtime_cur;
-
-      time (&runtime_cur);
-
-      int runtime_left = status_ctx->proc_start + user_options->runtime + status_ctx->prepare_time + (ms_paused / 1000) - runtime_cur;
+      const int runtime_left = get_runtime_left (hashcat_ctx);
 
       if (runtime_left <= 0)
       {
-        if (user_options->benchmark == false)
-        {
-          if (user_options->quiet == false) log_info ("\nNOTE: Runtime limit reached, aborting...\n");
-        }
+        EVENT_DATA (EVENT_MONITOR_RUNTIME_LIMIT, NULL, 0);
 
-        myabort (status_ctx);
+        myabort_runtime (hashcat_ctx);
       }
     }
 
@@ -304,7 +311,9 @@ static void monitor (hashcat_ctx_t *hashcat_ctx)
         {
           hashes->digests_saved = hashes->digests_done;
 
-          save_hash (user_options, hashconfig, hashes);
+          const int rc = save_hash (hashcat_ctx);
+
+          if (rc == -1) return -1;
         }
 
         remove_left = user_options->remove_timer;
@@ -319,17 +328,65 @@ static void monitor (hashcat_ctx_t *hashcat_ctx)
       {
         hc_thread_mutex_lock (status_ctx->mux_display);
 
-        if (user_options->quiet == false) clear_prompt ();
-
-        if (user_options->quiet == false) log_info ("");
-
-        status_display (hashcat_ctx);
-
-        if (user_options->quiet == false) log_info ("");
+        EVENT_DATA (EVENT_MONITOR_STATUS_REFRESH, NULL, 0);
 
         hc_thread_mutex_unlock (status_ctx->mux_display);
 
         status_left = user_options->status_timer;
+      }
+    }
+
+    if (performance_check == true)
+    {
+      int exec_cnt = 0;
+      int util_cnt = 0;
+
+      double exec_total = 0;
+      double util_total = 0;
+
+      hc_thread_mutex_lock (status_ctx->mux_hwmon);
+
+      for (u32 device_id = 0; device_id < opencl_ctx->devices_cnt; device_id++)
+      {
+        hc_device_param_t *device_param = &opencl_ctx->devices_param[device_id];
+
+        if (device_param->skipped == true) continue;
+
+        exec_cnt++;
+
+        const double exec = status_get_exec_msec_dev (hashcat_ctx, device_id);
+
+        exec_total += exec;
+
+        const int util = hm_get_utilization_with_device_id (hashcat_ctx, device_id);
+
+        if (util == -1) continue;
+
+        util_total += (double) util;
+
+        util_cnt++;
+      }
+
+      hc_thread_mutex_unlock (status_ctx->mux_hwmon);
+
+      double exec_avg = 0;
+      double util_avg = 0;
+
+      if (exec_cnt > 0) exec_avg = exec_total / exec_cnt;
+      if (util_cnt > 0) util_avg = util_total / util_cnt;
+
+      if ((exec_avg > 0) && (exec_avg < exec_low))
+      {
+        performance_warnings++;
+
+        if (performance_warnings == 10) EVENT_DATA (EVENT_MONITOR_PERFORMANCE_HINT, NULL, 0);
+      }
+
+      if ((util_avg > 0) && (util_avg < util_low))
+      {
+        performance_warnings++;
+
+        if (performance_warnings == 10) EVENT_DATA (EVENT_MONITOR_PERFORMANCE_HINT, NULL, 0);
       }
     }
   }
@@ -340,7 +397,9 @@ static void monitor (hashcat_ctx_t *hashcat_ctx)
   {
     if (hashes->digests_saved != hashes->digests_done)
     {
-      save_hash (user_options, hashconfig, hashes);
+      const int rc = save_hash (hashcat_ctx);
+
+      if (rc == -1) return -1;
     }
   }
 
@@ -348,20 +407,19 @@ static void monitor (hashcat_ctx_t *hashcat_ctx)
 
   if (restore_check == true)
   {
-    cycle_restore (restore_ctx, opencl_ctx);
+    const int rc = cycle_restore (hashcat_ctx);
+
+    if (rc == -1) return -1;
   }
 
-  myfree (fan_speed_chgd);
-
-  myfree (temp_diff_old);
-  myfree (temp_diff_sum);
+  return 0;
 }
 
 void *thread_monitor (void *p)
 {
   hashcat_ctx_t *hashcat_ctx = (hashcat_ctx_t *) p;
 
-  monitor (hashcat_ctx);
+  monitor (hashcat_ctx); // we should give back some useful returncode
 
   return NULL;
 }

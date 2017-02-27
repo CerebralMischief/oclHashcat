@@ -7,6 +7,11 @@
 #define _EXT_ADL_H
 
 #include <string.h>
+#include <stdlib.h>
+
+#if defined (_WIN)
+#include <windows.h>
+#endif // _WIN
 
 /**
  * Declarations from adl_sdk.h and subheaders
@@ -40,13 +45,13 @@ typedef struct AdapterInfo
   char strDisplayName[ADL_MAX_PATH];
   int  iPresent;
 
-  #if defined (_WIN32) || defined (_WIN64)
+  #if defined (_WIN32) || defined (_WIN64) || defined (__CYGWIN__)
   int  iExist;
   char strDriverPath[ADL_MAX_PATH];
   char strDriverPathExt[ADL_MAX_PATH];
   char strPNPString[ADL_MAX_PATH];
   int  iOSDisplayIndex;
-  #endif /* (_WIN32) || (_WIN64) */
+  #endif /* (_WIN32) || (_WIN64) || (__CYGWIN__) */
 
   #if defined (__linux__)
   int  iXScreenNum;
@@ -247,7 +252,7 @@ typedef struct ADLOD6PowerControlInfo
 
 #if defined (__MSC_VER)
 #define ADL_API_CALL __cdecl
-#elif defined (_WIN32) || defined (__WIN32__) || defined (__CYGWIN__)
+#elif defined (_WIN32) || defined (__WIN32__)
 #define ADL_API_CALL __stdcall
 #else
 #define ADL_API_CALL
@@ -268,7 +273,7 @@ typedef struct struct_ADLOD6MemClockState
 
 } ADLOD6MemClockState;
 
-typedef int (ADL_API_CALL *ADL_MAIN_CONTROL_DESTROY) ();
+typedef int (ADL_API_CALL *ADL_MAIN_CONTROL_DESTROY) (void);
 typedef int (ADL_API_CALL *ADL_MAIN_CONTROL_CREATE) (ADL_MAIN_MALLOC_CALLBACK, int);
 typedef int (ADL_API_CALL *ADL_ADAPTER_NUMBEROFADAPTERS_GET) (int *);
 typedef int (ADL_API_CALL *ADL_ADAPTER_ADAPTERINFO_GET) (LPAdapterInfo, int);
@@ -352,44 +357,6 @@ typedef struct hm_adl_lib
 
 typedef hm_adl_lib_t ADL_PTR;
 
-int  adl_init  (ADL_PTR *lib);
-void adl_close (ADL_PTR *lib);
-
 void *HC_API_CALL ADL_Main_Memory_Alloc (const int iSize);
-
-int hm_ADL_Main_Control_Destroy (ADL_PTR *adl);
-int hm_ADL_Main_Control_Create (ADL_PTR *adl, ADL_MAIN_MALLOC_CALLBACK callback, int iEnumConnectedAdapters);
-int hm_ADL_Adapter_NumberOfAdapters_Get (ADL_PTR *adl, int *lpNumAdapters);
-int hm_ADL_Adapter_AdapterInfo_Get (ADL_PTR *adl, LPAdapterInfo lpInfo, int iInputSize);
-int hm_ADL_Display_DisplayInfo_Get (ADL_PTR *adl, int iAdapterIndex, int *iNumDisplays, ADLDisplayInfo **lppInfo, int iForceDetect);
-int hm_ADL_Overdrive5_Temperature_Get (ADL_PTR *adl, int iAdapterIndex, int iThermalControllerIndex, ADLTemperature *lpTemperature);
-int hm_ADL_Overdrive6_Temperature_Get (ADL_PTR *adl, int iAdapterIndex, int *iTemperature);
-int hm_ADL_Overdrive_CurrentActivity_Get (ADL_PTR *adl, int iAdapterIndex, ADLPMActivity *lpActivity);
-int hm_ADL_Overdrive_ThermalDevices_Enum (ADL_PTR *adl, int iAdapterIndex, int iThermalControllerIndex, ADLThermalControllerInfo *lpThermalControllerInfo);
-int hm_ADL_Adapter_ID_Get (ADL_PTR *adl, int iAdapterIndex, int *lpAdapterID);
-int hm_ADL_Adapter_VideoBiosInfo_Get (ADL_PTR *adl, int iAdapterIndex, ADLBiosInfo *lpBiosInfo);
-int hm_ADL_Overdrive5_FanSpeedInfo_Get (ADL_PTR *adl, int iAdapterIndex, int iThermalControllerIndex, ADLFanSpeedInfo *lpFanSpeedInfo);
-int hm_ADL_Overdrive5_FanSpeed_Get (ADL_PTR *adl, int iAdapterIndex, int iThermalControllerIndex, ADLFanSpeedValue *lpFanSpeedValue);
-int hm_ADL_Overdrive6_FanSpeed_Get (ADL_PTR *adl, int iAdapterIndex, ADLOD6FanSpeedInfo *lpFanSpeedInfo);
-int hm_ADL_Overdrive5_FanSpeed_Set (ADL_PTR *adl, int iAdapterIndex, int iThermalControllerIndex, ADLFanSpeedValue *lpFanSpeedValue);
-int hm_ADL_Overdrive6_FanSpeed_Set (ADL_PTR *adl, int iAdapterIndex, ADLOD6FanSpeedValue *lpFanSpeedValue);
-int hm_ADL_Overdrive5_FanSpeedToDefault_Set (ADL_PTR *adl, int iAdapterIndex, int iThermalControllerIndex);
-int hm_ADL_Overdrive_ODParameters_Get (ADL_PTR *adl, int iAdapterIndex, ADLODParameters *lpOdParameters);
-int hm_ADL_Overdrive_ODPerformanceLevels_Get (ADL_PTR *adl, int iAdapterIndex, int iDefault, ADLODPerformanceLevels *lpOdPerformanceLevels);
-int hm_ADL_Overdrive_ODPerformanceLevels_Set (ADL_PTR *adl, int iAdapterIndex, ADLODPerformanceLevels *lpOdPerformanceLevels);
-int hm_ADL_Overdrive_PowerControlInfo_Get (ADL_PTR *adl, int iAdapterIndex, ADLOD6PowerControlInfo *);
-int hm_ADL_Overdrive_PowerControl_Get (ADL_PTR *adl, int iAdapterIndex, int *level);
-int hm_ADL_Overdrive_PowerControl_Set (ADL_PTR *adl, int iAdapterIndex, int level);
-int hm_ADL_Adapter_Active_Get (ADL_PTR *adl, int iAdapterIndex, int *lpStatus);
-//int hm_ADL_DisplayEnable_Set (ADL_PTR *adl, int iAdapterIndex, int *lpDisplayIndexList, int iDisplayListSize, int bPersistOnly);
-int hm_ADL_Overdrive_Caps (ADL_PTR *adl, int iAdapterIndex, int *od_supported, int *od_enabled, int *od_version);
-int hm_ADL_Overdrive_CurrentStatus_Get (ADL_PTR *adl, int iAdapterIndex, ADLOD6CurrentStatus *status);
-int hm_ADL_Overdrive_StateInfo_Get (ADL_PTR *adl, int iAdapterIndex, int type, ADLOD6MemClockState *state);
-int hm_ADL_Overdrive_Capabilities_Get (ADL_PTR *adl, int iAdapterIndex, ADLOD6Capabilities *caps);
-int hm_ADL_Overdrive_State_Set (ADL_PTR *adl, int iAdapterIndex, int type, ADLOD6StateInfo *state);
-int hm_ADL_Overdrive6_PowerControl_Caps (ADL_PTR *adl, int iAdapterIndex, int *lpSupported);
-int hm_ADL_Overdrive6_TargetTemperatureData_Get (ADL_PTR *adl, int iAdapterIndex, int *cur_temp, int *default_temp);
-int hm_ADL_Overdrive6_TargetTemperatureRangeInfo_Get (ADL_PTR *adl, int iAdapterIndex, ADLOD6ParameterRange *lpTargetTemperatureInfo);
-int hm_ADL_Overdrive6_FanSpeed_Reset (ADL_PTR *adl, int iAdapterIndex);
 
 #endif // _EXT_ADL_H

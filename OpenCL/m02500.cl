@@ -3,8 +3,6 @@
  * License.....: MIT
  */
 
-#define _WPA_
-
 #define NEW_SIMD_CODE
 
 #include "inc_vendor.cl"
@@ -581,7 +579,7 @@ void hmac_sha1_run_V (u32x w0[4], u32x w1[4], u32x w2[4], u32x w3[4], u32x ipad[
   sha1_transform_V (w0, w1, w2, w3, digest);
 }
 
-__kernel void m02500_init (__global pw_t *pws, __global kernel_rule_t *rules_buf, __global comb_t *combs_buf, __global bf_t *bfs_buf, __global wpa_tmp_t *tmps, __global void *hooks, __global u32 *bitmaps_buf_s1_a, __global u32 *bitmaps_buf_s1_b, __global u32 *bitmaps_buf_s1_c, __global u32 *bitmaps_buf_s1_d, __global u32 *bitmaps_buf_s2_a, __global u32 *bitmaps_buf_s2_b, __global u32 *bitmaps_buf_s2_c, __global u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global digest_t *digests_buf, __global u32 *hashes_shown, __global salt_t *salt_bufs, __global wpa_t *wpa_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
+__kernel void m02500_init (__global pw_t *pws, __global const kernel_rule_t *rules_buf, __global const comb_t *combs_buf, __global const bf_t *bfs_buf, __global wpa_tmp_t *tmps, __global void *hooks, __global const u32 *bitmaps_buf_s1_a, __global const u32 *bitmaps_buf_s1_b, __global const u32 *bitmaps_buf_s1_c, __global const u32 *bitmaps_buf_s1_d, __global const u32 *bitmaps_buf_s2_a, __global const u32 *bitmaps_buf_s2_b, __global const u32 *bitmaps_buf_s2_c, __global const u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global const digest_t *digests_buf, __global u32 *hashes_shown, __global const salt_t *salt_bufs, __global wpa_t *wpa_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
 {
   /**
    * base
@@ -736,11 +734,11 @@ __kernel void m02500_init (__global pw_t *pws, __global kernel_rule_t *rules_buf
   }
 }
 
-__kernel void m02500_loop (__global pw_t *pws, __global kernel_rule_t *rules_buf, __global comb_t *combs_buf, __global bf_t *bfs_buf, __global wpa_tmp_t *tmps, __global void *hooks, __global u32 *bitmaps_buf_s1_a, __global u32 *bitmaps_buf_s1_b, __global u32 *bitmaps_buf_s1_c, __global u32 *bitmaps_buf_s1_d, __global u32 *bitmaps_buf_s2_a, __global u32 *bitmaps_buf_s2_b, __global u32 *bitmaps_buf_s2_c, __global u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global digest_t *digests_buf, __global u32 *hashes_shown, __global salt_t *salt_bufs, __global wpa_t *wpa_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
+__kernel void m02500_loop (__global pw_t *pws, __global const kernel_rule_t *rules_buf, __global const comb_t *combs_buf, __global const bf_t *bfs_buf, __global wpa_tmp_t *tmps, __global void *hooks, __global const u32 *bitmaps_buf_s1_a, __global const u32 *bitmaps_buf_s1_b, __global const u32 *bitmaps_buf_s1_c, __global const u32 *bitmaps_buf_s1_d, __global const u32 *bitmaps_buf_s2_a, __global const u32 *bitmaps_buf_s2_b, __global const u32 *bitmaps_buf_s2_c, __global const u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global const digest_t *digests_buf, __global u32 *hashes_shown, __global const salt_t *salt_bufs, __global wpa_t *wpa_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
 {
   const u32 gid = get_global_id (0);
 
-  if (gid >= gid_max) return;
+  if ((gid * VECT_SIZE) >= gid_max) return;
 
   u32x ipad[5];
   u32x opad[5];
@@ -821,7 +819,7 @@ __kernel void m02500_loop (__global pw_t *pws, __global kernel_rule_t *rules_buf
   }
 }
 
-__kernel void m02500_comp (__global pw_t *pws, __global kernel_rule_t *rules_buf, __global comb_t *combs_buf, __global bf_t *bfs_buf, __global wpa_tmp_t *tmps, __global void *hooks, __global u32 *bitmaps_buf_s1_a, __global u32 *bitmaps_buf_s1_b, __global u32 *bitmaps_buf_s1_c, __global u32 *bitmaps_buf_s1_d, __global u32 *bitmaps_buf_s2_a, __global u32 *bitmaps_buf_s2_b, __global u32 *bitmaps_buf_s2_c, __global u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global digest_t *digests_buf, __global u32 *hashes_shown, __global salt_t *salt_bufs, __global wpa_t *wpa_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
+__kernel void m02500_comp (__global pw_t *pws, __global const kernel_rule_t *rules_buf, __global const comb_t *combs_buf, __global const bf_t *bfs_buf, __global wpa_tmp_t *tmps, __global void *hooks, __global const u32 *bitmaps_buf_s1_a, __global const u32 *bitmaps_buf_s1_b, __global const u32 *bitmaps_buf_s1_c, __global const u32 *bitmaps_buf_s1_d, __global const u32 *bitmaps_buf_s2_a, __global const u32 *bitmaps_buf_s2_b, __global const u32 *bitmaps_buf_s2_c, __global const u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global const digest_t *digests_buf, __global u32 *hashes_shown, __global const salt_t *salt_bufs, __global wpa_t *wpa_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
 {
   const u32 gid = get_global_id (0);
 
@@ -916,12 +914,12 @@ __kernel void m02500_comp (__global pw_t *pws, __global kernel_rule_t *rules_buf
 
     hmac_md5_pad_S (w0, w1, w2, w3, ipad, opad);
 
-    int eapol_size = wpa_bufs[salt_pos].eapol_size;
+    int eapol_len = wpa_bufs[salt_pos].eapol_len;
 
     int eapol_left;
     int eapol_off;
 
-    for (eapol_left = eapol_size, eapol_off = 0; eapol_left >= 56; eapol_left -= 64, eapol_off += 16)
+    for (eapol_left = eapol_len, eapol_off = 0; eapol_left >= 56; eapol_left -= 64, eapol_off += 16)
     {
       w0[0] = wpa_bufs[salt_pos].eapol[eapol_off +  0];
       w0[1] = wpa_bufs[salt_pos].eapol[eapol_off +  1];
@@ -957,7 +955,7 @@ __kernel void m02500_comp (__global pw_t *pws, __global kernel_rule_t *rules_buf
     w2[3] = wpa_bufs[salt_pos].eapol[eapol_off + 11];
     w3[0] = wpa_bufs[salt_pos].eapol[eapol_off + 12];
     w3[1] = wpa_bufs[salt_pos].eapol[eapol_off + 13];
-    w3[2] = (64 + eapol_size) * 8;
+    w3[2] = (64 + eapol_len) * 8;
     w3[3] = 0;
 
     u32 digest1[4];
@@ -998,12 +996,12 @@ __kernel void m02500_comp (__global pw_t *pws, __global kernel_rule_t *rules_buf
 
     hmac_sha1_pad_S (w0, w1, w2, w3, ipad, opad);
 
-    int eapol_size = wpa_bufs[salt_pos].eapol_size;
+    int eapol_len = wpa_bufs[salt_pos].eapol_len;
 
     int eapol_left;
     int eapol_off;
 
-    for (eapol_left = eapol_size, eapol_off = 0; eapol_left >= 56; eapol_left -= 64, eapol_off += 16)
+    for (eapol_left = eapol_len, eapol_off = 0; eapol_left >= 56; eapol_left -= 64, eapol_off += 16)
     {
       w0[0] = wpa_bufs[salt_pos].eapol[eapol_off +  0];
       w0[1] = wpa_bufs[salt_pos].eapol[eapol_off +  1];
@@ -1040,7 +1038,7 @@ __kernel void m02500_comp (__global pw_t *pws, __global kernel_rule_t *rules_buf
     w3[0] = wpa_bufs[salt_pos].eapol[eapol_off + 12];
     w3[1] = wpa_bufs[salt_pos].eapol[eapol_off + 13];
     w3[2] = 0;
-    w3[3] = (64 + eapol_size) * 8;
+    w3[3] = (64 + eapol_len) * 8;
 
     u32 digest2[5];
 

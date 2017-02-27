@@ -6,27 +6,29 @@
 #include "common.h"
 #include "types.h"
 #include "memory.h"
-#include "logging.h"
+#include "event.h"
+#include "convert.h"
 #include "interface.h"
 #include "hashes.h"
 #include "mpsp.h"
 #include "rp.h"
 #include "rp_kernel_on_cpu.h"
 #include "opencl.h"
+#include "shared.h"
 #include "outfile.h"
+#include "locking.h"
 
-void build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, plain_t *plain, u32 *plain_buf, int *out_len)
+int build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, plain_t *plain, u32 *plain_buf, int *out_len)
 {
-  combinator_ctx_t      *combinator_ctx     = hashcat_ctx->combinator_ctx;
-  hashconfig_t          *hashconfig         = hashcat_ctx->hashconfig;
-  hashes_t              *hashes             = hashcat_ctx->hashes;
-  mask_ctx_t            *mask_ctx           = hashcat_ctx->mask_ctx;
-  opencl_ctx_t          *opencl_ctx         = hashcat_ctx->opencl_ctx;
-  straight_ctx_t        *straight_ctx       = hashcat_ctx->straight_ctx;
-  user_options_t        *user_options       = hashcat_ctx->user_options;
+  const combinator_ctx_t *combinator_ctx = hashcat_ctx->combinator_ctx;
+  const hashconfig_t     *hashconfig     = hashcat_ctx->hashconfig;
+  const hashes_t         *hashes         = hashcat_ctx->hashes;
+  const mask_ctx_t       *mask_ctx       = hashcat_ctx->mask_ctx;
+  const straight_ctx_t   *straight_ctx   = hashcat_ctx->straight_ctx;
+  const user_options_t   *user_options   = hashcat_ctx->user_options;
 
-  const u32 gidvid      = plain->gidvid;
-  const u32 il_pos      = plain->il_pos;
+  const u32 gidvid = plain->gidvid;
+  const u32 il_pos = plain->il_pos;
 
   int plain_len = 0;
 
@@ -36,7 +38,9 @@ void build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, p
   {
     pw_t pw;
 
-    gidd_to_pw_t (opencl_ctx, device_param, gidvid, &pw);
+    const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
+
+    if (rc == -1) return -1;
 
     for (int i = 0; i < 16; i++)
     {
@@ -55,7 +59,9 @@ void build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, p
   {
     pw_t pw;
 
-    gidd_to_pw_t (opencl_ctx, device_param, gidvid, &pw);
+    const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
+
+    if (rc == -1) return -1;
 
     for (int i = 0; i < 16; i++)
     {
@@ -78,12 +84,20 @@ void build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, p
       memcpy (plain_ptr, comb_buf, comb_len);
     }
 
+    int pw_max_combi;
+
+    if (hashconfig->pw_max < PW_DICTMAX)
+    {
+      pw_max_combi = hashconfig->pw_max;
+    }
+    else
+    {
+      pw_max_combi = PW_MAX;
+    }
+
     plain_len += comb_len;
 
-    if (hashconfig->pw_max != PW_DICTMAX1)
-    {
-      if (plain_len > (int) hashconfig->pw_max) plain_len = (int) hashconfig->pw_max;
-    }
+    if (plain_len > pw_max_combi) plain_len = pw_max_combi;
   }
   else if (user_options->attack_mode == ATTACK_MODE_BF)
   {
@@ -105,7 +119,9 @@ void build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, p
   {
     pw_t pw;
 
-    gidd_to_pw_t (opencl_ctx, device_param, gidvid, &pw);
+    const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
+
+    if (rc == -1) return -1;
 
     for (int i = 0; i < 16; i++)
     {
@@ -123,16 +139,15 @@ void build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, p
 
     plain_len += start + stop;
 
-    if (hashconfig->pw_max != PW_DICTMAX1)
-    {
-      if (plain_len > (int) hashconfig->pw_max) plain_len = (int) hashconfig->pw_max;
-    }
+    if (plain_len > (int) hashconfig->pw_max) plain_len = (int) hashconfig->pw_max;
   }
   else if (user_options->attack_mode == ATTACK_MODE_HYBRID2)
   {
     pw_t pw;
 
-    gidd_to_pw_t (opencl_ctx, device_param, gidvid, &pw);
+    const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
+
+    if (rc == -1) return -1;
 
     for (int i = 0; i < 16; i++)
     {
@@ -152,10 +167,7 @@ void build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, p
 
     plain_len += start + stop;
 
-    if (hashconfig->pw_max != PW_DICTMAX1)
-    {
-      if (plain_len > (int) hashconfig->pw_max) plain_len = (int) hashconfig->pw_max;
-    }
+    if (plain_len > (int) hashconfig->pw_max) plain_len = (int) hashconfig->pw_max;
   }
 
   if (user_options->attack_mode == ATTACK_MODE_BF)
@@ -182,18 +194,22 @@ void build_plain (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, p
     }
   }
 
+  plain_ptr[plain_len] = 0;
+
   *out_len = plain_len;
+
+  return 0;
 }
 
-void build_crackpos (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, plain_t *plain, u64 *out_pos)
+int build_crackpos (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, plain_t *plain, u64 *out_pos)
 {
-  combinator_ctx_t      *combinator_ctx     = hashcat_ctx->combinator_ctx;
-  mask_ctx_t            *mask_ctx           = hashcat_ctx->mask_ctx;
-  straight_ctx_t        *straight_ctx       = hashcat_ctx->straight_ctx;
-  user_options_extra_t  *user_options_extra = hashcat_ctx->user_options_extra;
+  const combinator_ctx_t      *combinator_ctx     = hashcat_ctx->combinator_ctx;
+  const mask_ctx_t            *mask_ctx           = hashcat_ctx->mask_ctx;
+  const straight_ctx_t        *straight_ctx       = hashcat_ctx->straight_ctx;
+  const user_options_extra_t  *user_options_extra = hashcat_ctx->user_options_extra;
 
-  const u32 gidvid      = plain->gidvid;
-  const u32 il_pos      = plain->il_pos;
+  const u32 gidvid = plain->gidvid;
+  const u32 il_pos = plain->il_pos;
 
   u64 crackpos = device_param->words_off;
 
@@ -217,27 +233,30 @@ void build_crackpos (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param
   }
 
   *out_pos = crackpos;
+
+  return 0;
 }
 
-void build_debugdata (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, plain_t *plain, u8 *debug_rule_buf, int *debug_rule_len, u8 *debug_plain_ptr, int *debug_plain_len)
+int build_debugdata (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, plain_t *plain, u8 *debug_rule_buf, int *debug_rule_len, u8 *debug_plain_ptr, int *debug_plain_len)
 {
-  debugfile_ctx_t       *debugfile_ctx      = hashcat_ctx->debugfile_ctx;
-  opencl_ctx_t          *opencl_ctx         = hashcat_ctx->opencl_ctx;
-  straight_ctx_t        *straight_ctx       = hashcat_ctx->straight_ctx;
-  user_options_t        *user_options       = hashcat_ctx->user_options;
+  const debugfile_ctx_t *debugfile_ctx = hashcat_ctx->debugfile_ctx;
+  const straight_ctx_t  *straight_ctx  = hashcat_ctx->straight_ctx;
+  const user_options_t  *user_options  = hashcat_ctx->user_options;
 
-  const u32 gidvid      = plain->gidvid;
-  const u32 il_pos      = plain->il_pos;
+  const u32 gidvid = plain->gidvid;
+  const u32 il_pos = plain->il_pos;
 
-  if (user_options->attack_mode != ATTACK_MODE_STRAIGHT) return;
+  if (user_options->attack_mode != ATTACK_MODE_STRAIGHT) return 0;
 
   const u32 debug_mode = debugfile_ctx->mode;
 
-  if (debug_mode == 0) return;
+  if (debug_mode == 0) return 0;
 
   pw_t pw;
 
-  gidd_to_pw_t (opencl_ctx, device_param, gidvid, &pw);
+  const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
+
+  if (rc == -1) return -1;
 
   int plain_len = (int) pw.pw_len;
 
@@ -246,7 +265,11 @@ void build_debugdata (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_para
   // save rule
   if ((debug_mode == 1) || (debug_mode == 3) || (debug_mode == 4))
   {
-    *debug_rule_len = kernel_rule_to_cpu_rule ((char *) debug_rule_buf, &straight_ctx->kernel_rules_buf[off]);
+    const int len = kernel_rule_to_cpu_rule ((char *) debug_rule_buf, &straight_ctx->kernel_rules_buf[off]);
+
+    debug_rule_buf[len] = 0;
+
+    *debug_rule_len = len;
   }
 
   // save plain
@@ -254,225 +277,172 @@ void build_debugdata (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_para
   {
     memcpy (debug_plain_ptr, (char *) pw.i, (size_t) plain_len);
 
+    debug_plain_ptr[plain_len] = 0;
+
     *debug_plain_len = plain_len;
   }
+
+  return 0;
 }
 
-void outfile_init (outfile_ctx_t *outfile_ctx, const user_options_t *user_options)
+int outfile_init (hashcat_ctx_t *hashcat_ctx)
 {
-  if (user_options->outfile == NULL)
-  {
-    outfile_ctx->fp       = stdout;
-    outfile_ctx->filename = NULL;
-  }
-  else
-  {
-    outfile_ctx->fp       = NULL;
-    outfile_ctx->filename = user_options->outfile;
-  }
+  outfile_ctx_t  *outfile_ctx  = hashcat_ctx->outfile_ctx;
+  user_options_t *user_options = hashcat_ctx->user_options;
 
+  outfile_ctx->fp               = NULL;
+  outfile_ctx->filename         = user_options->outfile;
   outfile_ctx->outfile_format   = user_options->outfile_format;
   outfile_ctx->outfile_autohex  = user_options->outfile_autohex;
+
+  return 0;
 }
 
-void outfile_destroy (outfile_ctx_t *outfile_ctx)
+void outfile_destroy (hashcat_ctx_t *hashcat_ctx)
 {
+  outfile_ctx_t *outfile_ctx = hashcat_ctx->outfile_ctx;
+
   memset (outfile_ctx, 0, sizeof (outfile_ctx_t));
 }
 
-void outfile_format_plain (outfile_ctx_t *outfile_ctx, const unsigned char *plain_ptr, const u32 plain_len)
+int outfile_write_open (hashcat_ctx_t *hashcat_ctx)
 {
-  bool needs_hexify = false;
+  outfile_ctx_t *outfile_ctx = hashcat_ctx->outfile_ctx;
 
-  if (outfile_ctx->outfile_autohex == true)
+  if (outfile_ctx->filename == NULL) return 0;
+
+  FILE *fp = fopen (outfile_ctx->filename, "ab");
+
+  if (fp == NULL)
   {
-    for (u32 i = 0; i < plain_len; i++)
-    {
-      if (plain_ptr[i] < 0x20)
-      {
-        needs_hexify = true;
+    event_log_error (hashcat_ctx, "%s: %s", outfile_ctx->filename, strerror (errno));
 
-        break;
-      }
-
-      if (plain_ptr[i] > 0x7f)
-      {
-        needs_hexify = true;
-
-        break;
-      }
-    }
+    return -1;
   }
 
-  if (needs_hexify == true)
+  if (lock_file (fp) == -1)
   {
-    fprintf (outfile_ctx->fp, "$HEX[");
+    fclose (fp);
 
-    for (u32 i = 0; i < plain_len; i++)
-    {
-      fprintf (outfile_ctx->fp, "%02x", plain_ptr[i]);
-    }
+    event_log_error (hashcat_ctx, "%s: %s", outfile_ctx->filename, strerror (errno));
 
-    fprintf (outfile_ctx->fp, "]");
+    return -1;
   }
-  else
-  {
-    fwrite (plain_ptr, plain_len, 1, outfile_ctx->fp);
-  }
+
+  outfile_ctx->fp = fp;
+
+  return 0;
 }
 
-void outfile_write_open (outfile_ctx_t *outfile_ctx)
+void outfile_write_close (hashcat_ctx_t *hashcat_ctx)
 {
-  if (outfile_ctx->filename == NULL) return;
+  outfile_ctx_t *outfile_ctx = hashcat_ctx->outfile_ctx;
 
-  outfile_ctx->fp = fopen (outfile_ctx->filename, "ab");
-
-  if (outfile_ctx->fp == NULL)
-  {
-    log_error ("ERROR: %s: %s", outfile_ctx->filename, strerror (errno));
-
-    outfile_ctx->fp       = stdout;
-    outfile_ctx->filename = NULL;
-  }
-}
-
-void outfile_write_close (outfile_ctx_t *outfile_ctx)
-{
-  if (outfile_ctx->fp == stdout) return;
+  if (outfile_ctx->fp == NULL) return;
 
   fclose (outfile_ctx->fp);
 }
 
-void outfile_write (outfile_ctx_t *outfile_ctx, const char *out_buf, const unsigned char *plain_ptr, const u32 plain_len, const u64 crackpos, const unsigned char *username, const u32 user_len, const hashconfig_t *hashconfig)
+int outfile_write (hashcat_ctx_t *hashcat_ctx, const char *out_buf, const unsigned char *plain_ptr, const u32 plain_len, const u64 crackpos, const unsigned char *username, const u32 user_len, char tmp_buf[HCBUFSIZ_LARGE])
 {
-  if (outfile_ctx->outfile_format & OUTFILE_FMT_HASH)
-  {
-    fprintf (outfile_ctx->fp, "%s", out_buf);
+  const hashconfig_t   *hashconfig   = hashcat_ctx->hashconfig;
+  const outfile_ctx_t  *outfile_ctx  = hashcat_ctx->outfile_ctx;
+  const user_options_t *user_options = hashcat_ctx->user_options;
 
-    if (outfile_ctx->outfile_format & (OUTFILE_FMT_PLAIN | OUTFILE_FMT_HEXPLAIN | OUTFILE_FMT_CRACKPOS))
-    {
-      fputc (hashconfig->separator, outfile_ctx->fp);
-    }
-  }
-  else if (user_len)
+  int tmp_len = 0;
+
+  if (user_len > 0)
   {
     if (username != NULL)
     {
-      for (u32 i = 0; i < user_len; i++)
-      {
-        fprintf (outfile_ctx->fp, "%c", username[i]);
-      }
+      memcpy (tmp_buf + tmp_len, username, user_len);
 
-      if (outfile_ctx->outfile_format & (OUTFILE_FMT_PLAIN | OUTFILE_FMT_HEXPLAIN | OUTFILE_FMT_CRACKPOS))
+      tmp_len += user_len;
+
+      if (outfile_ctx->outfile_format & (OUTFILE_FMT_HASH | OUTFILE_FMT_PLAIN | OUTFILE_FMT_HEXPLAIN | OUTFILE_FMT_CRACKPOS))
       {
-        fputc (hashconfig->separator, outfile_ctx->fp);
+        tmp_buf[tmp_len] = hashconfig->separator;
+
+        tmp_len += 1;
       }
+    }
+  }
+
+  if (outfile_ctx->outfile_format & OUTFILE_FMT_HASH)
+  {
+    const size_t out_len = strlen (out_buf);
+
+    memcpy (tmp_buf + tmp_len, out_buf, out_len);
+
+    tmp_len += out_len;
+
+    if (outfile_ctx->outfile_format & (OUTFILE_FMT_PLAIN | OUTFILE_FMT_HEXPLAIN | OUTFILE_FMT_CRACKPOS))
+    {
+      tmp_buf[tmp_len] = hashconfig->separator;
+
+      tmp_len += 1;
     }
   }
 
   if (outfile_ctx->outfile_format & OUTFILE_FMT_PLAIN)
   {
-    outfile_format_plain (outfile_ctx, plain_ptr, plain_len);
+    const bool always_ascii = (hashconfig->hash_type & OPTS_TYPE_PT_ALWAYS_ASCII) ? true : false;
+
+    if ((user_options->outfile_autohex == true) && (need_hexify (plain_ptr, plain_len, hashconfig->separator, always_ascii) == true))
+    {
+      tmp_buf[tmp_len++] = '$';
+      tmp_buf[tmp_len++] = 'H';
+      tmp_buf[tmp_len++] = 'E';
+      tmp_buf[tmp_len++] = 'X';
+      tmp_buf[tmp_len++] = '[';
+
+      exec_hexify ((const u8 *) plain_ptr, plain_len, (u8 *) tmp_buf + tmp_len);
+
+      tmp_len += plain_len * 2;
+
+      tmp_buf[tmp_len++] = ']';
+    }
+    else
+    {
+      memcpy (tmp_buf + tmp_len, plain_ptr, plain_len);
+
+      tmp_len += plain_len;
+    }
 
     if (outfile_ctx->outfile_format & (OUTFILE_FMT_HEXPLAIN | OUTFILE_FMT_CRACKPOS))
     {
-      fputc (hashconfig->separator, outfile_ctx->fp);
+      tmp_buf[tmp_len] = hashconfig->separator;
+
+      tmp_len += 1;
     }
   }
 
   if (outfile_ctx->outfile_format & OUTFILE_FMT_HEXPLAIN)
   {
-    for (u32 i = 0; i < plain_len; i++)
-    {
-      fprintf (outfile_ctx->fp, "%02x", plain_ptr[i]);
-    }
+    exec_hexify ((const u8 *) plain_ptr, plain_len, (u8 *) tmp_buf + tmp_len);
+
+    tmp_len += plain_len * 2;
 
     if (outfile_ctx->outfile_format & (OUTFILE_FMT_CRACKPOS))
     {
-      fputc (hashconfig->separator, outfile_ctx->fp);
+      tmp_buf[tmp_len] = hashconfig->separator;
+
+      tmp_len += 1;
     }
   }
 
   if (outfile_ctx->outfile_format & OUTFILE_FMT_CRACKPOS)
   {
-    fprintf (outfile_ctx->fp, "%" PRIu64, crackpos);
+    sprintf (tmp_buf + tmp_len, "%" PRIu64, crackpos);
   }
 
-  fputs (EOL, outfile_ctx->fp);
-}
+  tmp_buf[tmp_len] = 0;
 
-int outfile_and_hashfile (outfile_ctx_t *outfile_ctx, const char *hashfile)
-{
-  if (hashfile == NULL) return 0;
-
-  char *outfile = outfile_ctx->filename;
-
-  if (outfile == NULL) return 0;
-
-  hc_stat tmpstat_outfile;
-  hc_stat tmpstat_hashfile;
-
-  FILE *tmp_outfile_fp = fopen (outfile, "r");
-
-  if (tmp_outfile_fp)
+  if (outfile_ctx->fp != NULL)
   {
-    #if defined (_POSIX)
-    fstat (fileno (tmp_outfile_fp), &tmpstat_outfile);
-    #endif
-
-    #if defined (_WIN)
-    _fstat64 (fileno (tmp_outfile_fp), &tmpstat_outfile);
-    #endif
-
-    fclose (tmp_outfile_fp);
+    fwrite (tmp_buf, tmp_len,      1, outfile_ctx->fp);
+    fwrite (EOL,     strlen (EOL), 1, outfile_ctx->fp);
   }
 
-  FILE *tmp_hashfile_fp = fopen (hashfile, "r");
-
-  if (tmp_hashfile_fp)
-  {
-    #if defined (_POSIX)
-    fstat (fileno (tmp_hashfile_fp), &tmpstat_hashfile);
-    #endif
-
-    #if defined (_WIN)
-    _fstat64 (fileno (tmp_hashfile_fp), &tmpstat_hashfile);
-    #endif
-
-    fclose (tmp_hashfile_fp);
-  }
-
-  if (tmp_outfile_fp && tmp_outfile_fp)
-  {
-    tmpstat_outfile.st_mode     = 0;
-    tmpstat_outfile.st_nlink    = 0;
-    tmpstat_outfile.st_uid      = 0;
-    tmpstat_outfile.st_gid      = 0;
-    tmpstat_outfile.st_rdev     = 0;
-    tmpstat_outfile.st_atime    = 0;
-
-    tmpstat_hashfile.st_mode    = 0;
-    tmpstat_hashfile.st_nlink   = 0;
-    tmpstat_hashfile.st_uid     = 0;
-    tmpstat_hashfile.st_gid     = 0;
-    tmpstat_hashfile.st_rdev    = 0;
-    tmpstat_hashfile.st_atime   = 0;
-
-    #if defined (_POSIX)
-    tmpstat_outfile.st_blksize  = 0;
-    tmpstat_outfile.st_blocks   = 0;
-
-    tmpstat_hashfile.st_blksize = 0;
-    tmpstat_hashfile.st_blocks  = 0;
-    #endif
-
-    if (memcmp (&tmpstat_outfile, &tmpstat_hashfile, sizeof (hc_stat)) == 0)
-    {
-      log_error ("ERROR: Hashfile and Outfile are not allowed to point to the same file");
-
-      return -1;
-    }
-  }
-
-  return 0;
+  return tmp_len;
 }

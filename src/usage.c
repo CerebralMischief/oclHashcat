@@ -4,12 +4,11 @@
  */
 
 #include "common.h"
-#include "logging.h"
 #include "usage.h"
 
 static const char *USAGE_MINI[] =
 {
-  "Usage: %s [options]... hash|hashfile|hccapfile [dictionary|mask|directory]...",
+  "Usage: %s [options]... hash|hashfile|hccapxfile [dictionary|mask|directory]...",
   "",
   "Try --help for more help.",
   NULL
@@ -19,7 +18,7 @@ static const char *USAGE_BIG[] =
 {
   "%s, advanced password recovery",
   "",
-  "Usage: %s [options]... hash|hashfile|hccapfile [dictionary|mask|directory]...",
+  "Usage: %s [options]... hash|hashfile|hccapxfile [dictionary|mask|directory]...",
   "",
   "- [ Options ] -",
   "",
@@ -37,6 +36,7 @@ static const char *USAGE_BIG[] =
   "     --status                  |      | Enable automatic update of the status-screen         |",
   "     --status-timer            | Num  | Sets seconds between status-screen update to X       | --status-timer=1",
   "     --machine-readable        |      | Display the status view in a machine readable format |",
+  "     --keep-guessing           |      | Keep guessing the hash after it has been cracked     |",
   "     --loopback                |      | Add new plains to induct directory                   |",
   "     --weak-hash-threshold     | Num  | Threshold X when to stop checking for weak hashes    | --weak=0",
   "     --markov-hcstat           | File | Specify hcstat file to use                           | --markov-hc=my.hcstat",
@@ -47,6 +47,7 @@ static const char *USAGE_BIG[] =
   "     --session                 | Str  | Define specific session name                         | --session=mysession",
   "     --restore                 |      | Restore session from --session                       |",
   "     --restore-disable         |      | Do not write restore file                            |",
+  "     --restore-file-path       | File | Specific path to restore file                        | --restore-file-path=my.restore",
   " -o, --outfile                 | File | Define outfile for recovered hash                    | -o outfile.txt",
   "     --outfile-format          | Num  | Define outfile-format X for recovered hash           | --outfile-format=7",
   "     --outfile-autohex-disable |      | Disable the use of $HEX[] in output plains           |",
@@ -65,10 +66,13 @@ static const char *USAGE_BIG[] =
   "     --induction-dir           | Dir  | Specify the induction directory to use for loopback  | --induction=inducts",
   "     --outfile-check-dir       | Dir  | Specify the outfile directory to monitor for plains  | --outfile-check-dir=x",
   "     --logfile-disable         |      | Disable the logfile                                  |",
+  "     --hccapx-message-pair     | Num  | Load only message pairs from hccapx matching X       | --hccapx-message-pair=2",
   "     --truecrypt-keyfiles      | File | Keyfiles used, separate with comma                   | --truecrypt-key=x.png",
   "     --veracrypt-keyfiles      | File | Keyfiles used, separate with comma                   | --veracrypt-key=x.txt",
   "     --veracrypt-pim           | Num  | VeraCrypt personal iterations multiplier             | --veracrypt-pim=1000",
   " -b, --benchmark               |      | Run benchmark                                        |",
+  "     --speed-only              |      | Return expected speed of the attack and quit         |",
+  "     --progress-only           |      | Return ideal progress step size and time to process  |",
   " -c, --segment-size            | Num  | Sets size in MB to cache from the wordfile to X      | -c 32",
   "     --bitmap-min              | Num  | Sets minimum bits allowed for bitmaps to X           | --bitmap-min=24",
   "     --bitmap-max              | Num  | Sets maximum bits allowed for bitmaps to X           | --bitmap-max=24",
@@ -113,8 +117,9 @@ static const char *USAGE_BIG[] =
   "      0 | MD5                                              | Raw Hash",
   "   5100 | Half MD5                                         | Raw Hash",
   "    100 | SHA1                                             | Raw Hash",
-  "  10800 | SHA-384                                          | Raw Hash",
+  "   1300 | SHA-224                                          | Raw Hash",
   "   1400 | SHA-256                                          | Raw Hash",
+  "  10800 | SHA-384                                          | Raw Hash",
   "   1700 | SHA-512                                          | Raw Hash",
   "   5000 | SHA-3(Keccak)                                    | Raw Hash",
   "  10100 | SipHash                                          | Raw Hash",
@@ -129,7 +134,10 @@ static const char *USAGE_BIG[] =
   "     40 | md5($salt.unicode($pass))                        | Raw Hash, Salted and / or Iterated",
   "   3800 | md5($salt.$pass.$salt)                           | Raw Hash, Salted and / or Iterated",
   "   3710 | md5($salt.md5($pass))                            | Raw Hash, Salted and / or Iterated",
+  "   4010 | md5($salt.md5($salt.$pass))                      | Raw Hash, Salted and / or Iterated",
+  "   4110 | md5($salt.md5($pass.$salt))                      | Raw Hash, Salted and / or Iterated",
   "   2600 | md5(md5($pass))                                  | Raw Hash, Salted and / or Iterated",
+  "   3910 | md5(md5($pass).md5($salt))                       | Raw Hash, Salted and / or Iterated",
   "   4300 | md5(strtoupper(md5($pass)))                      | Raw Hash, Salted and / or Iterated",
   "   4400 | md5(sha1($pass))                                 | Raw Hash, Salted and / or Iterated",
   "    110 | sha1($pass.$salt)                                | Raw Hash, Salted and / or Iterated",
@@ -137,8 +145,10 @@ static const char *USAGE_BIG[] =
   "    130 | sha1(unicode($pass).$salt)                       | Raw Hash, Salted and / or Iterated",
   "    140 | sha1($salt.unicode($pass))                       | Raw Hash, Salted and / or Iterated",
   "   4500 | sha1(sha1($pass))                                | Raw Hash, Salted and / or Iterated",
+  "   4520 | sha1($salt.sha1($pass))                          | Raw Hash, Salted and / or Iterated",
   "   4700 | sha1(md5($pass))                                 | Raw Hash, Salted and / or Iterated",
   "   4900 | sha1($salt.$pass.$salt)                          | Raw Hash, Salted and / or Iterated",
+  "  14400 | sha1(CX)                                         | Raw Hash, Salted and / or Iterated",
   "   1410 | sha256($pass.$salt)                              | Raw Hash, Salted and / or Iterated",
   "   1420 | sha256($salt.$pass)                              | Raw Hash, Salted and / or Iterated",
   "   1430 | sha256(unicode($pass).$salt)                     | Raw Hash, Salted and / or Iterated",
@@ -157,6 +167,7 @@ static const char *USAGE_BIG[] =
   "   1760 | HMAC-SHA512 (key = $salt)                        | Raw Hash, Authenticated",
   "  14000 | DES (PT = $salt, key = $pass)                    | Raw Cipher, Known-Plaintext attack",
   "  14100 | 3DES (PT = $salt, key = $pass)                   | Raw Cipher, Known-Plaintext attack",
+  "  14900 | Skip32 (PT = $salt, key = $pass)                 | Raw Cipher, Known-Plaintext attack",
   "    400 | phpass                                           | Generic KDF",
   "   8900 | scrypt                                           | Generic KDF",
   "  11900 | PBKDF2-HMAC-MD5                                  | Generic KDF",
@@ -197,8 +208,9 @@ static const char *USAGE_BIG[] =
   "    124 | Django (SHA-1)                                   | Forums, CMS, E-Commerce, Frameworks",
   "  10000 | Django (PBKDF2-SHA256)                           | Forums, CMS, E-Commerce, Frameworks",
   "   3711 | Mediawiki B type                                 | Forums, CMS, E-Commerce, Frameworks",
-  "   7600 | Redmine                                          | Forums, CMS, E-Commerce, Frameworks",
   "  13900 | OpenCart                                         | Forums, CMS, E-Commerce, Frameworks",
+  "   4521 | Redmine                                          | Forums, CMS, E-Commerce, Frameworks",
+  "   4522 | PunBB                                            | Forums, CMS, E-Commerce, Frameworks",
   "     12 | PostgreSQL                                       | Database Server",
   "    131 | MSSQL(2000)                                      | Database Server",
   "    132 | MSSQL(2005)                                      | Database Server",
@@ -217,7 +229,9 @@ static const char *USAGE_BIG[] =
   "   1421 | hMailServer                                      | HTTP, SMTP, LDAP Server",
   "    101 | nsldap, SHA-1(Base64), Netscape LDAP SHA         | HTTP, SMTP, LDAP Server",
   "    111 | nsldaps, SSHA-1(Base64), Netscape LDAP SSHA      | HTTP, SMTP, LDAP Server",
+  "   1411 | SSHA-256(Base64), LDAP {SSHA256}                 | HTTP, SMTP, LDAP Server",
   "   1711 | SSHA-512(Base64), LDAP {SSHA512}                 | HTTP, SMTP, LDAP Server",
+  "  15000 | FileZilla Server >= 0.9.55                       | FTP Server",
   "  11500 | CRC32                                            | Checksums",
   "   3000 | LM                                               | Operating-Systems",
   "   1000 | NTLM                                             | Operating-Systems",
@@ -245,6 +259,7 @@ static const char *USAGE_BIG[] =
   "   9300 | Cisco-IOS $9$                                    | Operating-Systems",
   "     22 | Juniper Netscreen/SSG (ScreenOS)                 | Operating-Systems",
   "    501 | Juniper IVE                                      | Operating-Systems",
+  "   7000 | Fortigate (FortiOS)                              | Operating-Systems",
   "   5800 | Android PIN                                      | Operating-Systems",
   "  13800 | Windows 8+ phone PIN/Password                    | Operating-Systems",
   "   8100 | Citrix Netscaler                                 | Operating-Systems",
@@ -266,6 +281,8 @@ static const char *USAGE_BIG[] =
   "  13200 | AxCrypt                                          | Archives",
   "  13300 | AxCrypt in memory SHA1                           | Archives",
   "  13600 | WinZip                                           | Archives",
+  "  14700 | iTunes Backup < 10.0                             | Backup",
+  "  14800 | iTunes Backup >= 10.0                            | Backup",
   "   62XY | TrueCrypt                                        | Full-Disk encryptions (FDE)",
   "     X  | 1 = PBKDF2-HMAC-RipeMD160                        | Full-Disk encryptions (FDE)",
   "     X  | 2 = PBKDF2-HMAC-SHA512                           | Full-Disk encryptions (FDE)",
@@ -301,6 +318,7 @@ static const char *USAGE_BIG[] =
   "      Y | 2 = XTS 1024 bit cascaded Serpent-AES            | Full-Disk encryptions (FDE)",
   "      Y | 2 = XTS 1024 bit cascaded Twofish-Serpent        | Full-Disk encryptions (FDE)",
   "      Y | 3 = XTS 1536 bit all                             | Full-Disk encryptions (FDE)",
+  "  14600 | LUKS                                             | Full-Disk encryptions (FDE)",
   "   9700 | MS Office <= 2003 $0|$1, MD5 + RC4               | Documents",
   "   9710 | MS Office <= 2003 $0|$1, MD5 + RC4, collider #1  | Documents",
   "   9720 | MS Office <= 2003 $0|$1, MD5 + RC4, collider #2  | Documents",
@@ -324,6 +342,7 @@ static const char *USAGE_BIG[] =
   "  11300 | Bitcoin/Litecoin wallet.dat                      | Password Managers",
   "  12700 | Blockchain, My Wallet                            | Password Managers",
   "  13400 | Keepass 1 (AES/Twofish) and Keepass 2 (AES)      | Password Managers",
+  "  99999 | Plaintext                                        | Plaintext",
   "",
   "- [ Outfile Formats ] -",
   "",
@@ -371,6 +390,8 @@ static const char *USAGE_BIG[] =
   "  l | abcdefghijklmnopqrstuvwxyz",
   "  u | ABCDEFGHIJKLMNOPQRSTUVWXYZ",
   "  d | 0123456789",
+  "  h | 0123456789abcdef",
+  "  H | 0123456789ABCDEF",
   "  s |  !\"#$%%&'()*+,-./:;<=>?@[\\]^_`{|}~",
   "  a | ?l?u?d?s",
   "  b | 0x00 - 0xff",
@@ -411,10 +432,20 @@ static const char *USAGE_BIG[] =
 
 void usage_mini_print (const char *progname)
 {
-  for (int i = 0; USAGE_MINI[i] != NULL; i++) log_info (USAGE_MINI[i], progname);
+  for (int i = 0; USAGE_MINI[i] != NULL; i++)
+  {
+    printf (USAGE_MINI[i], progname);
+
+    fwrite (EOL, strlen (EOL), 1, stdout);
+  }
 }
 
 void usage_big_print (const char *progname)
 {
-  for (int i = 0; USAGE_BIG[i] != NULL; i++) log_info (USAGE_BIG[i], progname);
+  for (int i = 0; USAGE_BIG[i] != NULL; i++)
+  {
+    printf (USAGE_BIG[i], progname);
+
+    fwrite (EOL, strlen (EOL), 1, stdout);
+  }
 }

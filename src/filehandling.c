@@ -12,7 +12,7 @@ u64 count_lines (FILE *fd)
 {
   u64 cnt = 0;
 
-  char *buf = (char *) mymalloc (HCBUFSIZ_LARGE + 1);
+  char *buf = (char *) hcmalloc (HCBUFSIZ_LARGE + 1);
 
   char prev = '\n';
 
@@ -32,7 +32,7 @@ u64 count_lines (FILE *fd)
     }
   }
 
-  myfree (buf);
+  hcfree (buf);
 
   return cnt;
 }
@@ -58,34 +58,71 @@ int fgetl (FILE *fp, char *line_buf)
 
   if (line_len == 0) return 0;
 
-  if (line_buf[line_len - 1] == '\n')
+  while (line_len)
   {
-    line_len--;
+    if (line_buf[line_len - 1] == '\n')
+    {
+      line_len--;
 
-    line_buf[line_len] = 0;
+      continue;
+    }
+
+    if (line_buf[line_len - 1] == '\r')
+    {
+      line_len--;
+
+      continue;
+    }
+
+    break;
   }
 
-  if (line_len == 0) return 0;
-
-  if (line_buf[line_len - 1] == '\r')
-  {
-    line_len--;
-
-    line_buf[line_len] = 0;
-  }
+  line_buf[line_len] = 0;
 
   return (line_len);
 }
 
+size_t superchop_with_length (char *buf, const size_t len)
+{
+  size_t new_len = len;
+
+  while (new_len)
+  {
+    if (buf[new_len - 1] == '\n')
+    {
+      new_len--;
+
+      buf[new_len] = 0;
+
+      continue;
+    }
+
+    if (buf[new_len - 1] == '\r')
+    {
+      new_len--;
+
+      buf[new_len] = 0;
+
+      continue;
+    }
+
+    break;
+  }
+
+  return new_len;
+}
+
 int in_superchop (char *buf)
 {
-  int len = strlen (buf);
+  size_t len = strlen (buf);
 
   while (len)
   {
     if (buf[len - 1] == '\n')
     {
       len--;
+
+      buf[len] = 0;
 
       continue;
     }
@@ -94,13 +131,13 @@ int in_superchop (char *buf)
     {
       len--;
 
+      buf[len] = 0;
+
       continue;
     }
 
     break;
   }
-
-  buf[len] = 0;
 
   return len;
 }

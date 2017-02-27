@@ -5,7 +5,7 @@
 
 #include "common.h"
 #include "types.h"
-#include "logging.h"
+#include "event.h"
 #include "locking.h"
 #include "rp_kernel_on_cpu.h"
 #include "mpsp.h"
@@ -14,6 +14,8 @@
 
 static void out_flush (out_t *out)
 {
+  if (out->len == 0) return;
+
   fwrite (out->buf, 1, out->len, out->fp);
 
   out->len = 0;
@@ -25,9 +27,20 @@ static void out_push (out_t *out, const u8 *pw_buf, const int pw_len)
 
   memcpy (ptr, pw_buf, pw_len);
 
+  #if defined (_WIN)
+
+  ptr[pw_len + 0] = '\r';
+  ptr[pw_len + 1] = '\n';
+
+  out->len += pw_len + 2;
+
+  #else
+
   ptr[pw_len] = '\n';
 
   out->len += pw_len + 1;
+
+  #endif
 
   if (out->len >= BUFSIZ - 100)
   {
@@ -35,28 +48,42 @@ static void out_push (out_t *out, const u8 *pw_buf, const int pw_len)
   }
 }
 
-void process_stdout (opencl_ctx_t *opencl_ctx, hc_device_param_t *device_param, const user_options_t *user_options, const hashconfig_t *hashconfig, const straight_ctx_t *straight_ctx, const combinator_ctx_t *combinator_ctx, const mask_ctx_t *mask_ctx, const outfile_ctx_t *outfile_ctx, const u32 pws_cnt)
+int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 pws_cnt)
 {
+  combinator_ctx_t *combinator_ctx = hashcat_ctx->combinator_ctx;
+  hashconfig_t     *hashconfig     = hashcat_ctx->hashconfig;
+  mask_ctx_t       *mask_ctx       = hashcat_ctx->mask_ctx;
+  outfile_ctx_t    *outfile_ctx    = hashcat_ctx->outfile_ctx;
+  straight_ctx_t   *straight_ctx   = hashcat_ctx->straight_ctx;
+  user_options_t   *user_options   = hashcat_ctx->user_options;
+
   out_t out;
 
   out.fp = stdout;
 
-  // i think this section can be optimized now that we have outfile_ctx
-
   char *filename = outfile_ctx->filename;
 
-  if (filename != NULL)
+  if (filename)
   {
-    if ((out.fp = fopen (filename, "ab")) != NULL)
-    {
-      lock_file (out.fp);
-    }
-    else
-    {
-      log_error ("ERROR: %s: %s", filename, strerror (errno));
+    FILE *fp = fopen (filename, "ab");
 
-      out.fp = stdout;
+    if (fp == NULL)
+    {
+      event_log_error (hashcat_ctx, "%s: %s", filename, strerror (errno));
+
+      return -1;
     }
+
+    if (lock_file (fp) == -1)
+    {
+      fclose (fp);
+
+      event_log_error (hashcat_ctx, "%s: %s", filename, strerror (errno));
+
+      return -1;
+    }
+
+    out.fp = fp;
   }
 
   out.len = 0;
@@ -75,7 +102,14 @@ void process_stdout (opencl_ctx_t *opencl_ctx, hc_device_param_t *device_param, 
 
     for (u32 gidvid = 0; gidvid < pws_cnt; gidvid++)
     {
-      gidd_to_pw_t (opencl_ctx, device_param, gidvid, &pw);
+      const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
+
+      if (rc == -1)
+      {
+        if (filename) fclose (out.fp);
+
+        return -1;
+      }
 
       const u32 pos = device_param->innerloop_pos;
 
@@ -102,7 +136,14 @@ void process_stdout (opencl_ctx_t *opencl_ctx, hc_device_param_t *device_param, 
 
     for (u32 gidvid = 0; gidvid < pws_cnt; gidvid++)
     {
-      gidd_to_pw_t (opencl_ctx, device_param, gidvid, &pw);
+      const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
+
+      if (rc == -1)
+      {
+        if (filename) fclose (out.fp);
+
+        return -1;
+      }
 
       for (u32 il_pos = 0; il_pos < il_cnt; il_pos++)
       {
@@ -114,7 +155,7 @@ void process_stdout (opencl_ctx_t *opencl_ctx, hc_device_param_t *device_param, 
         plain_len = pw.pw_len;
 
         char *comb_buf = (char *) device_param->combs_buf[il_pos].i;
-        u32  comb_len =          device_param->combs_buf[il_pos].pw_len;
+        u32   comb_len =          device_param->combs_buf[il_pos].pw_len;
 
         if (combinator_ctx->combs_mode == COMBINATOR_MODE_BASE_LEFT)
         {
@@ -129,10 +170,7 @@ void process_stdout (opencl_ctx_t *opencl_ctx, hc_device_param_t *device_param, 
 
         plain_len += comb_len;
 
-        if (hashconfig->pw_max != PW_DICTMAX1)
-        {
-          if (plain_len > hashconfig->pw_max) plain_len = hashconfig->pw_max;
-        }
+        if (plain_len > hashconfig->pw_max) plain_len = hashconfig->pw_max;
 
         out_push (&out, plain_ptr, plain_len);
       }
@@ -168,7 +206,14 @@ void process_stdout (opencl_ctx_t *opencl_ctx, hc_device_param_t *device_param, 
 
     for (u32 gidvid = 0; gidvid < pws_cnt; gidvid++)
     {
-      gidd_to_pw_t (opencl_ctx, device_param, gidvid, &pw);
+      const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
+
+      if (rc == -1)
+      {
+        if (filename) fclose (out.fp);
+
+        return -1;
+      }
 
       for (u32 il_pos = 0; il_pos < il_cnt; il_pos++)
       {
@@ -198,7 +243,14 @@ void process_stdout (opencl_ctx_t *opencl_ctx, hc_device_param_t *device_param, 
 
     for (u32 gidvid = 0; gidvid < pws_cnt; gidvid++)
     {
-      gidd_to_pw_t (opencl_ctx, device_param, gidvid, &pw);
+      const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
+
+      if (rc == -1)
+      {
+        if (filename) fclose (out.fp);
+
+        return -1;
+      }
 
       for (u32 il_pos = 0; il_pos < il_cnt; il_pos++)
       {
@@ -227,10 +279,7 @@ void process_stdout (opencl_ctx_t *opencl_ctx, hc_device_param_t *device_param, 
 
   out_flush (&out);
 
-  if (out.fp != stdout)
-  {
-    unlock_file (out.fp);
+  if (filename) fclose (out.fp);
 
-    fclose (out.fp);
-  }
+  return 0;
 }

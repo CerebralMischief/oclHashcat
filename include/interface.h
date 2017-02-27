@@ -16,12 +16,134 @@
  * weak hashes shutcut
  */
 
-#define LM_WEAK_HASH    "\x4e\xcf\x0d\x0c\x0a\xe2\xfb\xc1"
-#define LM_MASKED_PLAIN "[notfound]"
+static const char LM_WEAK_HASH[]    = "aad3b435b51404ee";
+static const char LM_MASKED_PLAIN[] = "[notfound]";
 
 /**
  * algo specific
  */
+
+// original headers from luks.h
+
+#define LUKS_CIPHERNAME_L 32
+#define LUKS_CIPHERMODE_L 32
+#define LUKS_HASHSPEC_L 32
+#define LUKS_DIGESTSIZE 20 // since SHA1
+#define LUKS_HMACSIZE 32
+#define LUKS_SALTSIZE 32
+#define LUKS_NUMKEYS 8
+// Minimal number of iterations
+#define LUKS_MKD_ITERATIONS_MIN  1000
+#define LUKS_SLOT_ITERATIONS_MIN 1000
+#define LUKS_KEY_DISABLED_OLD 0
+#define LUKS_KEY_ENABLED_OLD 0xCAFE
+#define LUKS_KEY_DISABLED 0x0000DEAD
+#define LUKS_KEY_ENABLED  0x00AC71F3
+#define LUKS_STRIPES 4000
+// partition header starts with magic
+#define LUKS_MAGIC {'L','U','K','S', 0xba, 0xbe};
+#define LUKS_MAGIC_L 6
+/* Actually we need only 37, but we don't want struct autoaligning to kick in */
+#define UUID_STRING_L 40
+/* Offset to keyslot area [in bytes] */
+#define LUKS_ALIGN_KEYSLOTS 4096
+
+struct luks_phdr {
+	char		magic[LUKS_MAGIC_L];
+	uint16_t	version;
+	char		cipherName[LUKS_CIPHERNAME_L];
+	char		cipherMode[LUKS_CIPHERMODE_L];
+	char            hashSpec[LUKS_HASHSPEC_L];
+	uint32_t	payloadOffset;
+	uint32_t	keyBytes;
+	char		mkDigest[LUKS_DIGESTSIZE];
+	char		mkDigestSalt[LUKS_SALTSIZE];
+	uint32_t	mkDigestIterations;
+	char            uuid[UUID_STRING_L];
+	struct {
+		uint32_t active;
+		/* parameters used for password processing */
+		uint32_t passwordIterations;
+		char     passwordSalt[LUKS_SALTSIZE];
+		/* parameters used for AF store/load */
+		uint32_t keyMaterialOffset;
+		uint32_t stripes;
+	} keyblock[LUKS_NUMKEYS];
+	/* Align it to 512 sector size */
+	char		_padding[432];
+};
+
+// not from original headers start with hc_
+
+typedef enum hc_luks_hash_type
+{
+  HC_LUKS_HASH_TYPE_SHA1      = 1,
+  HC_LUKS_HASH_TYPE_SHA256    = 2,
+  HC_LUKS_HASH_TYPE_SHA512    = 3,
+  HC_LUKS_HASH_TYPE_RIPEMD160 = 4,
+  HC_LUKS_HASH_TYPE_WHIRLPOOL = 5,
+
+} hc_luks_hash_type_t;
+
+typedef enum hc_luks_key_size
+{
+  HC_LUKS_KEY_SIZE_128 = 128,
+  HC_LUKS_KEY_SIZE_256 = 256,
+  HC_LUKS_KEY_SIZE_512 = 512,
+
+} hc_luks_key_size_t;
+
+typedef enum hc_luks_cipher_type
+{
+  HC_LUKS_CIPHER_TYPE_AES     = 1,
+  HC_LUKS_CIPHER_TYPE_SERPENT = 2,
+  HC_LUKS_CIPHER_TYPE_TWOFISH = 3,
+
+} hc_luks_cipher_type_t;
+
+typedef enum hc_luks_cipher_mode
+{
+  HC_LUKS_CIPHER_MODE_CBC_ESSIV = 1,
+  HC_LUKS_CIPHER_MODE_CBC_PLAIN = 2,
+  HC_LUKS_CIPHER_MODE_XTS_PLAIN = 3,
+
+} hc_luks_cipher_mode_t;
+
+typedef struct luks
+{
+  int hash_type;    // hc_luks_hash_type_t
+  int key_size;     // hc_luks_key_size_t
+  int cipher_type;  // hc_luks_cipher_type_t
+  int cipher_mode;  // hc_luks_cipher_mode_t
+
+  u32 ct_buf[128];
+
+  u32 af_src_buf[((HC_LUKS_KEY_SIZE_512 / 8) * LUKS_STRIPES) / 4];
+
+} luks_t;
+
+typedef struct itunes_backup
+{
+  u32 wpky[10];
+  u32 dpsl[5];
+
+} itunes_backup_t;
+
+typedef struct luks_tmp
+{
+  u32 ipad32[8];
+  u64 ipad64[8];
+
+  u32 opad32[8];
+  u64 opad64[8];
+
+  u32 dgst32[32];
+  u64 dgst64[16];
+
+  u32 out32[32];
+  u64 out64[16];
+
+} luks_tmp_t;
 
 typedef struct rar5
 {
@@ -37,29 +159,34 @@ typedef struct pdf
 
   int  enc_md;
 
-  u32 id_buf[8];
-  u32 u_buf[32];
-  u32 o_buf[32];
+  u32  id_buf[8];
+  u32  u_buf[32];
+  u32  o_buf[32];
 
   int  id_len;
   int  o_len;
   int  u_len;
 
-  u32 rc4key[2];
-  u32 rc4data[2];
+  u32  rc4key[2];
+  u32  rc4data[2];
 
 } pdf_t;
 
 typedef struct wpa
 {
-  u32 pke[25];
-  u32 eapol[64];
-  int  eapol_size;
-  int  keyver;
-  u8   orig_mac1[6];
-  u8   orig_mac2[6];
-  u8   orig_nonce1[32];
-  u8   orig_nonce2[32];
+  u32  pke[25];
+  u32  eapol[64 + 16];
+  u16  eapol_len;
+  u8   message_pair;
+  int  message_pair_chgd;
+  u8   keyver;
+  u8   orig_mac_ap[6];
+  u8   orig_mac_sta[6];
+  u8   orig_nonce_ap[32];
+  u8   orig_nonce_sta[32];
+  int  essid_reuse;
+  u8   essid_len;
+  u8   essid[32];
 
 } wpa_t;
 
@@ -625,7 +752,7 @@ typedef struct cram_md5
 
 } cram_md5_t;
 
-typedef struct seven_zip
+typedef struct seven_zip_hook_salt
 {
   u32 iv_buf[4];
   u32 iv_len;
@@ -634,13 +761,26 @@ typedef struct seven_zip
   u32 salt_len;
 
   u32 crc;
+  u32 crc_len;
 
-  u32 data_buf[96];
+  u8  data_type;
+
+  u32 data_buf[2048];
   u32 data_len;
 
   u32 unpack_size;
 
-} seven_zip_t;
+  char coder_attributes[5 + 1];
+  u8   coder_attributes_len;
+
+  u32 margin;
+
+  bool padding_check_full;
+  bool padding_check_fast;
+
+  int aes_len; // pre-computed length of the maximal (subset of) data we need for AES-CBC
+
+} seven_zip_hook_salt_t;
 
 typedef struct axcrypt_tmp
 {
@@ -656,6 +796,14 @@ typedef struct keepass_tmp
 
 } keepass_tmp_t;
 
+typedef struct seven_zip_hook
+{
+  u32 ukey[8];
+
+  u32 hook_success;
+
+} seven_zip_hook_t;
+
 typedef struct struct_psafe2_hdr
 {
   u32  random[2];
@@ -665,22 +813,33 @@ typedef struct struct_psafe2_hdr
 
 } psafe2_hdr;
 
-typedef struct hccap
+#define HCCAPX_VERSION   4
+#define HCCAPX_SIGNATURE 0x58504348 // HCPX
+
+// this is required to force mingw to accept the packed attribute
+#pragma pack(push,1)
+
+struct hccapx
 {
-  char essid[36];
+  u32 signature;
+  u32 version;
+  u8  message_pair;
+  u8  essid_len;
+  u8  essid[32];
+  u8  keyver;
+  u8  keymic[16];
+  u8  mac_ap[6];
+  u8  nonce_ap[32];
+  u8  mac_sta[6];
+  u8  nonce_sta[32];
+  u16 eapol_len;
+  u8  eapol[256];
 
-  u8   mac1[6];
-  u8   mac2[6];
-  u8   nonce1[32];
-  u8   nonce2[32];
+} __attribute__((packed));
 
-  u8   eapol[256];
-  int  eapol_size;
+typedef struct hccapx hccapx_t;
 
-  int  keyver;
-  u8   keymic[16];
-
-} hccap_t;
+#pragma pack(pop)
 
 /**
  * hashtypes enums
@@ -738,6 +897,8 @@ typedef enum display_len
   DISPLAY_LEN_MAX_1100  = 32 + 1 + 19,
   DISPLAY_LEN_MIN_1100H = 32 + 1 + 0,
   DISPLAY_LEN_MAX_1100H = 32 + 1 + 38,
+  DISPLAY_LEN_MIN_1300  = 56,
+  DISPLAY_LEN_MAX_1300  = 56,
   DISPLAY_LEN_MIN_1400  = 64,
   DISPLAY_LEN_MAX_1400  = 64,
   DISPLAY_LEN_MIN_1410  = 64 + 1 + 0,
@@ -802,10 +963,12 @@ typedef enum display_len
   DISPLAY_LEN_MAX_3100H = 16 + 1 + 60,
   DISPLAY_LEN_MIN_3200  = 60,
   DISPLAY_LEN_MAX_3200  = 60,
-  DISPLAY_LEN_MIN_3711  = 3 +  0 + 1 + 32,
-  DISPLAY_LEN_MAX_3711  = 3 + 31 + 1 + 32,
   DISPLAY_LEN_MIN_4300  = 32,
   DISPLAY_LEN_MAX_4300  = 32,
+  DISPLAY_LEN_MIN_4500  = 40,
+  DISPLAY_LEN_MAX_4500  = 40,
+  DISPLAY_LEN_MIN_4520  = 40 + 1 + 1,
+  DISPLAY_LEN_MAX_4520  = 40 + 1 + 64,
   DISPLAY_LEN_MIN_4800  = 32 + 1 + 32 + 1 + 2,
   DISPLAY_LEN_MAX_4800  = 32 + 1 + 32 + 1 + 2,
   DISPLAY_LEN_MIN_5000  = 16,
@@ -842,6 +1005,8 @@ typedef enum display_len
   DISPLAY_LEN_MAX_6800  = 32 + 1 + 5 + 1 + 32,
   DISPLAY_LEN_MIN_6900  = 64,
   DISPLAY_LEN_MAX_6900  = 64,
+  DISPLAY_LEN_MIN_7000  = 3 + 44,
+  DISPLAY_LEN_MAX_7000  = 3 + 44,
   DISPLAY_LEN_MIN_7100  =  4 + 2 + 1 + 64 + 1 + 128,
   DISPLAY_LEN_MAX_7100  =  4 + 5 + 1 + 64 + 1 + 128,
   DISPLAY_LEN_MIN_7200  = 19 + 1 + 1 +   1 + 128,
@@ -936,8 +1101,8 @@ typedef enum display_len
   DISPLAY_LEN_MAX_11400 = 6 + 512 + 1 + 512 + 1 + 116 + 1 + 116 + 1 + 246 + 1 + 245 + 1 + 246 + 1 + 245 + 1 + 50 + 1 + 50 + 1 + 50 + 1 + 50 + 1 + 3 + 1 + 32,
   DISPLAY_LEN_MIN_11500 = 8 + 1 + 8,
   DISPLAY_LEN_MAX_11500 = 8 + 1 + 8,
-  DISPLAY_LEN_MIN_11600 = 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +  0 + 1 + 1 + 1 + 32 + 1 +  1 + 1 + 1 + 1 + 1 + 1 +   2,
-  DISPLAY_LEN_MAX_11600 = 1 + 2 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 64 + 1 + 1 + 1 + 32 + 1 + 10 + 1 + 3 + 1 + 3 + 1 + 768,
+  DISPLAY_LEN_MIN_11600 = 1 + 2 + 1 + 1 + 1 + 1 + 1 + 1 + 1 +  0 + 1 + 1 + 1 + 32 + 1 +  1 + 1 + 1 + 1 + 1 + 1 +     2,
+  DISPLAY_LEN_MAX_11600 = 1 + 2 + 1 + 1 + 1 + 2 + 1 + 1 + 1 + 64 + 1 + 1 + 1 + 32 + 1 + 10 + 1 + 4 + 1 + 4 + 1 + 16384+ /* only for compression: */ + 1 + 4 + 1 + 10,
   DISPLAY_LEN_MIN_11700 = 64,
   DISPLAY_LEN_MAX_11700 = 64,
   DISPLAY_LEN_MIN_11800 = 128,
@@ -986,6 +1151,16 @@ typedef enum display_len
   DISPLAY_LEN_MAX_14000 = 16 + 1 + 16,
   DISPLAY_LEN_MIN_14100 = 16 + 1 + 16,
   DISPLAY_LEN_MAX_14100 = 16 + 1 + 16,
+  DISPLAY_LEN_MIN_14400 = 40 + 1 + 20,
+  DISPLAY_LEN_MAX_14400 = 40 + 1 + 20,
+  DISPLAY_LEN_MIN_14700 = 15 + 1 + 1 + 1 + 80 + 1 + 1 + 1 + 40 + 1,
+  DISPLAY_LEN_MAX_14700 = 15 + 1 + 2 + 1 + 80 + 1 + 6 + 1 + 40 + 1 + 9 + 1 + 40,
+  DISPLAY_LEN_MIN_14900 = 8 + 1 + 8,
+  DISPLAY_LEN_MAX_14900 = 8 + 1 + 8,
+  DISPLAY_LEN_MIN_15000 = 128 + 1 + 64,
+  DISPLAY_LEN_MAX_15000 = 128 + 1 + 64,
+  DISPLAY_LEN_MIN_99999 = 1,
+  DISPLAY_LEN_MAX_99999 = 55,
 
   DISPLAY_LEN_MIN_11    = 32 + 1 + 16,
   DISPLAY_LEN_MAX_11    = 32 + 1 + 32,
@@ -1029,6 +1204,8 @@ typedef enum display_len
   DISPLAY_LEN_MAX_133   = 28,
   DISPLAY_LEN_MIN_141   = 14 +  0 +  1 + 28,
   DISPLAY_LEN_MAX_141   = 14 + 44 +  1 + 28,
+  DISPLAY_LEN_MIN_1411  =  9 + 44 +  0,
+  DISPLAY_LEN_MAX_1411  =  9 + 44 + 68,
   DISPLAY_LEN_MIN_1441  = 14 +  0 +  1 + 43,
   DISPLAY_LEN_MAX_1441  = 14 + 24 +  1 + 43,
   DISPLAY_LEN_MIN_1711  =  9 + 86 +  0,
@@ -1049,8 +1226,12 @@ typedef enum display_len
   DISPLAY_LEN_MAX_2811  = 32 + 1 + 31,
   DISPLAY_LEN_MIN_2811H = 32 + 1 + 0,
   DISPLAY_LEN_MAX_2811H = 32 + 1 + 62,
-  DISPLAY_LEN_MIN_7600  = 40 + 1 + 32,
-  DISPLAY_LEN_MAX_7600  = 40 + 1 + 32,
+  DISPLAY_LEN_MIN_3711  = 3 +  0 + 1 + 32,
+  DISPLAY_LEN_MAX_3711  = 3 + 31 + 1 + 32,
+  DISPLAY_LEN_MIN_4521  = 40 + 1 + 32,
+  DISPLAY_LEN_MAX_4521  = 40 + 1 + 32,
+  DISPLAY_LEN_MIN_4522  = 40 + 1 + 12,
+  DISPLAY_LEN_MAX_4522  = 40 + 1 + 12,
 
 } display_len_t;
 
@@ -1060,216 +1241,248 @@ typedef enum hash_type
   HASH_TYPE_MD5                 = 2,
   HASH_TYPE_MD5H                = 3,
   HASH_TYPE_SHA1                = 4,
-  HASH_TYPE_SHA256              = 5,
-  HASH_TYPE_SHA384              = 6,
-  HASH_TYPE_SHA512              = 7,
-  HASH_TYPE_DCC2                = 8,
-  HASH_TYPE_WPA                 = 9,
-  HASH_TYPE_LM                  = 10,
-  HASH_TYPE_DESCRYPT            = 11,
-  HASH_TYPE_ORACLEH             = 12,
-  HASH_TYPE_DESRACF             = 13,
-  HASH_TYPE_BCRYPT              = 14,
-  HASH_TYPE_KECCAK              = 15,
-  HASH_TYPE_NETNTLM             = 16,
-  HASH_TYPE_RIPEMD160           = 17,
-  HASH_TYPE_WHIRLPOOL           = 18,
-  HASH_TYPE_AES                 = 19,
-  HASH_TYPE_GOST                = 20,
-  HASH_TYPE_KRB5PA              = 21,
-  HASH_TYPE_SAPB                = 22,
-  HASH_TYPE_SAPG                = 23,
-  HASH_TYPE_MYSQL               = 24,
-  HASH_TYPE_LOTUS5              = 25,
-  HASH_TYPE_LOTUS6              = 26,
-  HASH_TYPE_ANDROIDFDE          = 27,
-  HASH_TYPE_SCRYPT              = 28,
-  HASH_TYPE_LOTUS8              = 29,
-  HASH_TYPE_OFFICE2007          = 30,
-  HASH_TYPE_OFFICE2010          = 31,
-  HASH_TYPE_OFFICE2013          = 32,
-  HASH_TYPE_OLDOFFICE01         = 33,
-  HASH_TYPE_OLDOFFICE34         = 34,
-  HASH_TYPE_SIPHASH             = 35,
-  HASH_TYPE_PDFU16              = 36,
-  HASH_TYPE_PDFU32              = 37,
-  HASH_TYPE_PBKDF2_SHA256       = 38,
-  HASH_TYPE_BITCOIN_WALLET      = 39,
-  HASH_TYPE_CRC32               = 40,
-  HASH_TYPE_GOST_2012SBOG_256   = 41,
-  HASH_TYPE_GOST_2012SBOG_512   = 42,
-  HASH_TYPE_PBKDF2_MD5          = 43,
-  HASH_TYPE_PBKDF2_SHA1         = 44,
-  HASH_TYPE_PBKDF2_SHA512       = 45,
-  HASH_TYPE_ECRYPTFS            = 46,
-  HASH_TYPE_ORACLET             = 47,
-  HASH_TYPE_BSDICRYPT           = 48,
-  HASH_TYPE_RAR3HP              = 49,
-  HASH_TYPE_KRB5TGS             = 50,
-  HASH_TYPE_STDOUT              = 51,
-  HASH_TYPE_DES                 = 52
+  HASH_TYPE_SHA224              = 5,
+  HASH_TYPE_SHA256              = 6,
+  HASH_TYPE_SHA384              = 7,
+  HASH_TYPE_SHA512              = 8,
+  HASH_TYPE_DCC2                = 9,
+  HASH_TYPE_WPA                 = 10,
+  HASH_TYPE_LM                  = 11,
+  HASH_TYPE_DESCRYPT            = 12,
+  HASH_TYPE_ORACLEH             = 13,
+  HASH_TYPE_DESRACF             = 14,
+  HASH_TYPE_BCRYPT              = 15,
+  HASH_TYPE_KECCAK              = 16,
+  HASH_TYPE_NETNTLM             = 17,
+  HASH_TYPE_RIPEMD160           = 18,
+  HASH_TYPE_WHIRLPOOL           = 19,
+  HASH_TYPE_AES                 = 20,
+  HASH_TYPE_GOST                = 21,
+  HASH_TYPE_KRB5PA              = 22,
+  HASH_TYPE_SAPB                = 23,
+  HASH_TYPE_SAPG                = 24,
+  HASH_TYPE_MYSQL               = 25,
+  HASH_TYPE_LOTUS5              = 26,
+  HASH_TYPE_LOTUS6              = 27,
+  HASH_TYPE_ANDROIDFDE          = 28,
+  HASH_TYPE_SCRYPT              = 29,
+  HASH_TYPE_LOTUS8              = 30,
+  HASH_TYPE_OFFICE2007          = 31,
+  HASH_TYPE_OFFICE2010          = 32,
+  HASH_TYPE_OFFICE2013          = 33,
+  HASH_TYPE_OLDOFFICE01         = 34,
+  HASH_TYPE_OLDOFFICE34         = 35,
+  HASH_TYPE_SIPHASH             = 36,
+  HASH_TYPE_PDFU16              = 37,
+  HASH_TYPE_PDFU32              = 38,
+  HASH_TYPE_PBKDF2_SHA256       = 39,
+  HASH_TYPE_BITCOIN_WALLET      = 40,
+  HASH_TYPE_CRC32               = 41,
+  HASH_TYPE_GOST_2012SBOG_256   = 42,
+  HASH_TYPE_GOST_2012SBOG_512   = 43,
+  HASH_TYPE_PBKDF2_MD5          = 44,
+  HASH_TYPE_PBKDF2_SHA1         = 45,
+  HASH_TYPE_PBKDF2_SHA512       = 46,
+  HASH_TYPE_ECRYPTFS            = 47,
+  HASH_TYPE_ORACLET             = 48,
+  HASH_TYPE_BSDICRYPT           = 49,
+  HASH_TYPE_RAR3HP              = 50,
+  HASH_TYPE_KRB5TGS             = 51,
+  HASH_TYPE_STDOUT              = 52,
+  HASH_TYPE_DES                 = 53,
+  HASH_TYPE_PLAINTEXT           = 54,
+  HASH_TYPE_LUKS                = 55,
+  HASH_TYPE_ITUNES_BACKUP_9     = 56,
+  HASH_TYPE_ITUNES_BACKUP_10    = 57,
+  HASH_TYPE_SKIP32              = 58,
 
 } hash_type_t;
 
 typedef enum kern_type
 {
-  KERN_TYPE_MD5                 = 0,
-  KERN_TYPE_MD5_PWSLT           = 10,
-  KERN_TYPE_MD5_SLTPW           = 20,
-  KERN_TYPE_MD5_PWUSLT          = 30,
-  KERN_TYPE_MD5_SLTPWU          = 40,
-  KERN_TYPE_HMACMD5_PW          = 50,
-  KERN_TYPE_HMACMD5_SLT         = 60,
-  KERN_TYPE_SHA1                = 100,
-  KERN_TYPE_SHA1_PWSLT          = 110,
-  KERN_TYPE_SHA1_SLTPW          = 120,
-  KERN_TYPE_SHA1_PWUSLT         = 130,
-  KERN_TYPE_SHA1_SLTPWU         = 140,
-  KERN_TYPE_HMACSHA1_PW         = 150,
-  KERN_TYPE_HMACSHA1_SLT        = 160,
-  KERN_TYPE_MYSQL               = 200,
-  KERN_TYPE_MYSQL41             = 300,
-  KERN_TYPE_PHPASS              = 400,
-  KERN_TYPE_MD5CRYPT            = 500,
-  KERN_TYPE_MD4                 = 900,
-  KERN_TYPE_MD4_PWU             = 1000,
-  KERN_TYPE_MD44_PWUSLT         = 1100,
-  KERN_TYPE_SHA256              = 1400,
-  KERN_TYPE_SHA256_PWSLT        = 1410,
-  KERN_TYPE_SHA256_SLTPW        = 1420,
-  KERN_TYPE_SHA256_PWUSLT       = 1430,
-  KERN_TYPE_SHA256_SLTPWU       = 1440,
-  KERN_TYPE_HMACSHA256_PW       = 1450,
-  KERN_TYPE_HMACSHA256_SLT      = 1460,
-  KERN_TYPE_DESCRYPT            = 1500,
-  KERN_TYPE_APR1CRYPT           = 1600,
-  KERN_TYPE_SHA512              = 1700,
-  KERN_TYPE_SHA512_PWSLT        = 1710,
-  KERN_TYPE_SHA512_SLTPW        = 1720,
-  KERN_TYPE_SHA512_PWSLTU       = 1730,
-  KERN_TYPE_SHA512_SLTPWU       = 1740,
-  KERN_TYPE_HMACSHA512_PW       = 1750,
-  KERN_TYPE_HMACSHA512_SLT      = 1760,
-  KERN_TYPE_SHA512CRYPT         = 1800,
-  KERN_TYPE_STDOUT              = 2000,
-  KERN_TYPE_DCC2                = 2100,
-  KERN_TYPE_MD5PIX              = 2400,
-  KERN_TYPE_MD5ASA              = 2410,
-  KERN_TYPE_WPA                 = 2500,
-  KERN_TYPE_MD55                = 2600,
-  KERN_TYPE_MD55_PWSLT1         = 2610,
-  KERN_TYPE_MD55_PWSLT2         = 2710,
-  KERN_TYPE_MD55_SLTPW          = 2810,
-  KERN_TYPE_LM                  = 3000,
-  KERN_TYPE_ORACLEH             = 3100,
-  KERN_TYPE_BCRYPT              = 3200,
-  KERN_TYPE_MD5_SLT_MD5_PW      = 3710,
-  KERN_TYPE_MD5_SLT_PW_SLT      = 3800,
-  KERN_TYPE_MD5U5               = 4300,
-  KERN_TYPE_MD5U5_PWSLT1        = 4310,
-  KERN_TYPE_MD5_SHA1            = 4400,
-  KERN_TYPE_SHA11               = 4500,
-  KERN_TYPE_SHA1_MD5            = 4700,
-  KERN_TYPE_MD5_CHAP            = 4800,
-  KERN_TYPE_SHA1_SLT_PW_SLT     = 4900,
-  KERN_TYPE_KECCAK              = 5000,
-  KERN_TYPE_MD5H                = 5100,
-  KERN_TYPE_PSAFE3              = 5200,
-  KERN_TYPE_IKEPSK_MD5          = 5300,
-  KERN_TYPE_IKEPSK_SHA1         = 5400,
-  KERN_TYPE_NETNTLMv1           = 5500,
-  KERN_TYPE_NETNTLMv2           = 5600,
-  KERN_TYPE_ANDROIDPIN          = 5800,
-  KERN_TYPE_RIPEMD160           = 6000,
-  KERN_TYPE_WHIRLPOOL           = 6100,
-  KERN_TYPE_TCRIPEMD160_XTS512  = 6211,
-  KERN_TYPE_TCRIPEMD160_XTS1024 = 6212,
-  KERN_TYPE_TCRIPEMD160_XTS1536 = 6213,
-  KERN_TYPE_TCSHA512_XTS512     = 6221,
-  KERN_TYPE_TCSHA512_XTS1024    = 6222,
-  KERN_TYPE_TCSHA512_XTS1536    = 6223,
-  KERN_TYPE_TCWHIRLPOOL_XTS512  = 6231,
-  KERN_TYPE_TCWHIRLPOOL_XTS1024 = 6232,
-  KERN_TYPE_TCWHIRLPOOL_XTS1536 = 6233,
-  KERN_TYPE_VCSHA256_XTS512     = 13751,
-  KERN_TYPE_VCSHA256_XTS1024    = 13752,
-  KERN_TYPE_VCSHA256_XTS1536    = 13753,
-  KERN_TYPE_MD5AIX              = 6300,
-  KERN_TYPE_SHA256AIX           = 6400,
-  KERN_TYPE_SHA512AIX           = 6500,
-  KERN_TYPE_AGILEKEY            = 6600,
-  KERN_TYPE_SHA1AIX             = 6700,
-  KERN_TYPE_LASTPASS            = 6800,
-  KERN_TYPE_GOST                = 6900,
-  KERN_TYPE_PBKDF2_SHA512       = 7100,
-  KERN_TYPE_RAKP                = 7300,
-  KERN_TYPE_SHA256CRYPT         = 7400,
-  KERN_TYPE_KRB5PA              = 7500,
-  KERN_TYPE_SHA1_SLT_SHA1_PW    = 7600,
-  KERN_TYPE_SAPB                = 7700,
-  KERN_TYPE_SAPG                = 7800,
-  KERN_TYPE_DRUPAL7             = 7900,
-  KERN_TYPE_SYBASEASE           = 8000,
-  KERN_TYPE_NETSCALER           = 8100,
-  KERN_TYPE_CLOUDKEY            = 8200,
-  KERN_TYPE_NSEC3               = 8300,
-  KERN_TYPE_WBB3                = 8400,
-  KERN_TYPE_RACF                = 8500,
-  KERN_TYPE_LOTUS5              = 8600,
-  KERN_TYPE_LOTUS6              = 8700,
-  KERN_TYPE_ANDROIDFDE          = 8800,
-  KERN_TYPE_SCRYPT              = 8900,
-  KERN_TYPE_PSAFE2              = 9000,
-  KERN_TYPE_LOTUS8              = 9100,
-  KERN_TYPE_OFFICE2007          = 9400,
-  KERN_TYPE_OFFICE2010          = 9500,
-  KERN_TYPE_OFFICE2013          = 9600,
-  KERN_TYPE_OLDOFFICE01         = 9700,
-  KERN_TYPE_OLDOFFICE01CM1      = 9710,
-  KERN_TYPE_OLDOFFICE01CM2      = 9720,
-  KERN_TYPE_OLDOFFICE34         = 9800,
-  KERN_TYPE_OLDOFFICE34CM1      = 9810,
-  KERN_TYPE_OLDOFFICE34CM2      = 9820,
-  KERN_TYPE_RADMIN2             = 9900,
-  KERN_TYPE_SIPHASH             = 10100,
-  KERN_TYPE_SAPH_SHA1           = 10300,
-  KERN_TYPE_PDF11               = 10400,
-  KERN_TYPE_PDF11CM1            = 10410,
-  KERN_TYPE_PDF11CM2            = 10420,
-  KERN_TYPE_PDF14               = 10500,
-  KERN_TYPE_PDF17L8             = 10700,
-  KERN_TYPE_SHA384              = 10800,
-  KERN_TYPE_PBKDF2_SHA256       = 10900,
-  KERN_TYPE_PRESTASHOP          = 11000,
-  KERN_TYPE_POSTGRESQL_AUTH     = 11100,
-  KERN_TYPE_MYSQL_AUTH          = 11200,
-  KERN_TYPE_BITCOIN_WALLET      = 11300,
-  KERN_TYPE_SIP_AUTH            = 11400,
-  KERN_TYPE_CRC32               = 11500,
-  KERN_TYPE_SEVEN_ZIP           = 11600,
-  KERN_TYPE_GOST_2012SBOG_256   = 11700,
-  KERN_TYPE_GOST_2012SBOG_512   = 11800,
-  KERN_TYPE_PBKDF2_MD5          = 11900,
-  KERN_TYPE_PBKDF2_SHA1         = 12000,
-  KERN_TYPE_ECRYPTFS            = 12200,
-  KERN_TYPE_ORACLET             = 12300,
-  KERN_TYPE_BSDICRYPT           = 12400,
-  KERN_TYPE_RAR3                = 12500,
-  KERN_TYPE_CF10                = 12600,
-  KERN_TYPE_MYWALLET            = 12700,
-  KERN_TYPE_MS_DRSR             = 12800,
-  KERN_TYPE_ANDROIDFDE_SAMSUNG  = 12900,
-  KERN_TYPE_RAR5                = 13000,
-  KERN_TYPE_KRB5TGS             = 13100,
-  KERN_TYPE_AXCRYPT             = 13200,
-  KERN_TYPE_SHA1_AXCRYPT        = 13300,
-  KERN_TYPE_KEEPASS             = 13400,
-  KERN_TYPE_PSTOKEN             = 13500,
-  KERN_TYPE_ZIP2                = 13600,
-  KERN_TYPE_WIN8PHONE           = 13800,
-  KERN_TYPE_OPENCART            = 13900,
-  KERN_TYPE_DES                 = 14000,
-  KERN_TYPE_3DES                = 14100
+  KERN_TYPE_MD5                     = 0,
+  KERN_TYPE_MD5_PWSLT               = 10,
+  KERN_TYPE_MD5_SLTPW               = 20,
+  KERN_TYPE_MD5_PWUSLT              = 30,
+  KERN_TYPE_MD5_SLTPWU              = 40,
+  KERN_TYPE_HMACMD5_PW              = 50,
+  KERN_TYPE_HMACMD5_SLT             = 60,
+  KERN_TYPE_SHA1                    = 100,
+  KERN_TYPE_SHA1_PWSLT              = 110,
+  KERN_TYPE_SHA1_SLTPW              = 120,
+  KERN_TYPE_SHA1_PWUSLT             = 130,
+  KERN_TYPE_SHA1_SLTPWU             = 140,
+  KERN_TYPE_HMACSHA1_PW             = 150,
+  KERN_TYPE_HMACSHA1_SLT            = 160,
+  KERN_TYPE_MYSQL                   = 200,
+  KERN_TYPE_MYSQL41                 = 300,
+  KERN_TYPE_PHPASS                  = 400,
+  KERN_TYPE_MD5CRYPT                = 500,
+  KERN_TYPE_MD4                     = 900,
+  KERN_TYPE_MD4_PWU                 = 1000,
+  KERN_TYPE_MD44_PWUSLT             = 1100,
+  KERN_TYPE_SHA224                  = 1300,
+  KERN_TYPE_SHA256                  = 1400,
+  KERN_TYPE_SHA256_PWSLT            = 1410,
+  KERN_TYPE_SHA256_SLTPW            = 1420,
+  KERN_TYPE_SHA256_PWUSLT           = 1430,
+  KERN_TYPE_SHA256_SLTPWU           = 1440,
+  KERN_TYPE_HMACSHA256_PW           = 1450,
+  KERN_TYPE_HMACSHA256_SLT          = 1460,
+  KERN_TYPE_DESCRYPT                = 1500,
+  KERN_TYPE_APR1CRYPT               = 1600,
+  KERN_TYPE_SHA512                  = 1700,
+  KERN_TYPE_SHA512_PWSLT            = 1710,
+  KERN_TYPE_SHA512_SLTPW            = 1720,
+  KERN_TYPE_SHA512_PWSLTU           = 1730,
+  KERN_TYPE_SHA512_SLTPWU           = 1740,
+  KERN_TYPE_HMACSHA512_PW           = 1750,
+  KERN_TYPE_HMACSHA512_SLT          = 1760,
+  KERN_TYPE_SHA512CRYPT             = 1800,
+  KERN_TYPE_STDOUT                  = 2000,
+  KERN_TYPE_DCC2                    = 2100,
+  KERN_TYPE_MD5PIX                  = 2400,
+  KERN_TYPE_MD5ASA                  = 2410,
+  KERN_TYPE_WPA                     = 2500,
+  KERN_TYPE_MD55                    = 2600,
+  KERN_TYPE_MD55_PWSLT1             = 2610,
+  KERN_TYPE_MD55_PWSLT2             = 2710,
+  KERN_TYPE_MD55_SLTPW              = 2810,
+  KERN_TYPE_LM                      = 3000,
+  KERN_TYPE_ORACLEH                 = 3100,
+  KERN_TYPE_BCRYPT                  = 3200,
+  KERN_TYPE_MD5_SLT_MD5_PW          = 3710,
+  KERN_TYPE_MD5_SLT_PW_SLT          = 3800,
+  KERN_TYPE_MD55_PWSLT              = 3910,
+  KERN_TYPE_MD5_SLT_MD5_SLT_PW      = 4010,
+  KERN_TYPE_MD5_SLT_MD5_PW_SLT      = 4110,
+  KERN_TYPE_MD5U5                   = 4300,
+  KERN_TYPE_MD5U5_PWSLT1            = 4310,
+  KERN_TYPE_MD5_SHA1                = 4400,
+  KERN_TYPE_SHA11                   = 4500,
+  KERN_TYPE_SHA1_SLT_SHA1_PW        = 4520,
+  KERN_TYPE_SHA1_MD5                = 4700,
+  KERN_TYPE_MD5_CHAP                = 4800,
+  KERN_TYPE_SHA1_SLT_PW_SLT         = 4900,
+  KERN_TYPE_KECCAK                  = 5000,
+  KERN_TYPE_MD5H                    = 5100,
+  KERN_TYPE_PSAFE3                  = 5200,
+  KERN_TYPE_IKEPSK_MD5              = 5300,
+  KERN_TYPE_IKEPSK_SHA1             = 5400,
+  KERN_TYPE_NETNTLMv1               = 5500,
+  KERN_TYPE_NETNTLMv2               = 5600,
+  KERN_TYPE_ANDROIDPIN              = 5800,
+  KERN_TYPE_RIPEMD160               = 6000,
+  KERN_TYPE_WHIRLPOOL               = 6100,
+  KERN_TYPE_TCRIPEMD160_XTS512      = 6211,
+  KERN_TYPE_TCRIPEMD160_XTS1024     = 6212,
+  KERN_TYPE_TCRIPEMD160_XTS1536     = 6213,
+  KERN_TYPE_TCSHA512_XTS512         = 6221,
+  KERN_TYPE_TCSHA512_XTS1024        = 6222,
+  KERN_TYPE_TCSHA512_XTS1536        = 6223,
+  KERN_TYPE_TCWHIRLPOOL_XTS512      = 6231,
+  KERN_TYPE_TCWHIRLPOOL_XTS1024     = 6232,
+  KERN_TYPE_TCWHIRLPOOL_XTS1536     = 6233,
+  KERN_TYPE_VCSHA256_XTS512         = 13751,
+  KERN_TYPE_VCSHA256_XTS1024        = 13752,
+  KERN_TYPE_VCSHA256_XTS1536        = 13753,
+  KERN_TYPE_MD5AIX                  = 6300,
+  KERN_TYPE_SHA256AIX               = 6400,
+  KERN_TYPE_SHA512AIX               = 6500,
+  KERN_TYPE_AGILEKEY                = 6600,
+  KERN_TYPE_SHA1AIX                 = 6700,
+  KERN_TYPE_LASTPASS                = 6800,
+  KERN_TYPE_GOST                    = 6900,
+  KERN_TYPE_FORTIGATE               = 7000,
+  KERN_TYPE_PBKDF2_SHA512           = 7100,
+  KERN_TYPE_RAKP                    = 7300,
+  KERN_TYPE_SHA256CRYPT             = 7400,
+  KERN_TYPE_KRB5PA                  = 7500,
+  KERN_TYPE_SAPB                    = 7700,
+  KERN_TYPE_SAPG                    = 7800,
+  KERN_TYPE_DRUPAL7                 = 7900,
+  KERN_TYPE_SYBASEASE               = 8000,
+  KERN_TYPE_NETSCALER               = 8100,
+  KERN_TYPE_CLOUDKEY                = 8200,
+  KERN_TYPE_NSEC3                   = 8300,
+  KERN_TYPE_WBB3                    = 8400,
+  KERN_TYPE_RACF                    = 8500,
+  KERN_TYPE_LOTUS5                  = 8600,
+  KERN_TYPE_LOTUS6                  = 8700,
+  KERN_TYPE_ANDROIDFDE              = 8800,
+  KERN_TYPE_SCRYPT                  = 8900,
+  KERN_TYPE_PSAFE2                  = 9000,
+  KERN_TYPE_LOTUS8                  = 9100,
+  KERN_TYPE_OFFICE2007              = 9400,
+  KERN_TYPE_OFFICE2010              = 9500,
+  KERN_TYPE_OFFICE2013              = 9600,
+  KERN_TYPE_OLDOFFICE01             = 9700,
+  KERN_TYPE_OLDOFFICE01CM1          = 9710,
+  KERN_TYPE_OLDOFFICE01CM2          = 9720,
+  KERN_TYPE_OLDOFFICE34             = 9800,
+  KERN_TYPE_OLDOFFICE34CM1          = 9810,
+  KERN_TYPE_OLDOFFICE34CM2          = 9820,
+  KERN_TYPE_RADMIN2                 = 9900,
+  KERN_TYPE_SIPHASH                 = 10100,
+  KERN_TYPE_SAPH_SHA1               = 10300,
+  KERN_TYPE_PDF11                   = 10400,
+  KERN_TYPE_PDF11CM1                = 10410,
+  KERN_TYPE_PDF11CM2                = 10420,
+  KERN_TYPE_PDF14                   = 10500,
+  KERN_TYPE_PDF17L8                 = 10700,
+  KERN_TYPE_SHA384                  = 10800,
+  KERN_TYPE_PBKDF2_SHA256           = 10900,
+  KERN_TYPE_PRESTASHOP              = 11000,
+  KERN_TYPE_POSTGRESQL_AUTH         = 11100,
+  KERN_TYPE_MYSQL_AUTH              = 11200,
+  KERN_TYPE_BITCOIN_WALLET          = 11300,
+  KERN_TYPE_SIP_AUTH                = 11400,
+  KERN_TYPE_CRC32                   = 11500,
+  KERN_TYPE_SEVEN_ZIP               = 11600,
+  KERN_TYPE_GOST_2012SBOG_256       = 11700,
+  KERN_TYPE_GOST_2012SBOG_512       = 11800,
+  KERN_TYPE_PBKDF2_MD5              = 11900,
+  KERN_TYPE_PBKDF2_SHA1             = 12000,
+  KERN_TYPE_ECRYPTFS                = 12200,
+  KERN_TYPE_ORACLET                 = 12300,
+  KERN_TYPE_BSDICRYPT               = 12400,
+  KERN_TYPE_RAR3                    = 12500,
+  KERN_TYPE_CF10                    = 12600,
+  KERN_TYPE_MYWALLET                = 12700,
+  KERN_TYPE_MS_DRSR                 = 12800,
+  KERN_TYPE_ANDROIDFDE_SAMSUNG      = 12900,
+  KERN_TYPE_RAR5                    = 13000,
+  KERN_TYPE_KRB5TGS                 = 13100,
+  KERN_TYPE_AXCRYPT                 = 13200,
+  KERN_TYPE_SHA1_AXCRYPT            = 13300,
+  KERN_TYPE_KEEPASS                 = 13400,
+  KERN_TYPE_PSTOKEN                 = 13500,
+  KERN_TYPE_ZIP2                    = 13600,
+  KERN_TYPE_WIN8PHONE               = 13800,
+  KERN_TYPE_OPENCART                = 13900,
+  KERN_TYPE_DES                     = 14000,
+  KERN_TYPE_3DES                    = 14100,
+  KERN_TYPE_SHA1CX                  = 14400,
+  KERN_TYPE_LUKS_SHA1_AES           = 14611,
+  KERN_TYPE_LUKS_SHA1_SERPENT       = 14612,
+  KERN_TYPE_LUKS_SHA1_TWOFISH       = 14613,
+  KERN_TYPE_LUKS_SHA256_AES         = 14621,
+  KERN_TYPE_LUKS_SHA256_SERPENT     = 14622,
+  KERN_TYPE_LUKS_SHA256_TWOFISH     = 14623,
+  KERN_TYPE_LUKS_SHA512_AES         = 14631,
+  KERN_TYPE_LUKS_SHA512_SERPENT     = 14632,
+  KERN_TYPE_LUKS_SHA512_TWOFISH     = 14633,
+  KERN_TYPE_LUKS_RIPEMD160_AES      = 14641,
+  KERN_TYPE_LUKS_RIPEMD160_SERPENT  = 14642,
+  KERN_TYPE_LUKS_RIPEMD160_TWOFISH  = 14643,
+  KERN_TYPE_LUKS_WHIRLPOOL_AES      = 14651,
+  KERN_TYPE_LUKS_WHIRLPOOL_SERPENT  = 14652,
+  KERN_TYPE_LUKS_WHIRLPOOL_TWOFISH  = 14653,
+  KERN_TYPE_ITUNES_BACKUP_9         = 14700,
+  KERN_TYPE_ITUNES_BACKUP_10        = 14800,
+  KERN_TYPE_SKIP32                  = 14900,
+  KERN_TYPE_FILEZILLA_SERVER        = 15000,
+  KERN_TYPE_PLAINTEXT               = 99999,
 
 } kern_type_t;
 
@@ -1332,6 +1545,10 @@ typedef enum rounds_count
    ROUNDS_AXCRYPT            = 10000,
    ROUNDS_KEEPASS            = 6000,
    ROUNDS_ZIP2               = 1000,
+   ROUNDS_LUKS               = 163044, // this equal to jtr -test
+   ROUNDS_ITUNES9_BACKUP     = 10000,
+   ROUNDS_ITUNES101_BACKUP   = 10000000, // wtf, i mean, really?
+   ROUNDS_ITUNES102_BACKUP   = 10000,
    ROUNDS_STDOUT             = 0
 
 } rounds_count_t;
@@ -1340,162 +1557,178 @@ typedef enum rounds_count
  * input functions
  */
 
-int bcrypt_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int cisco4_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int dcc_parse_hash                (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int dcc2_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int descrypt_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int des_parse_hash                (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int episerver_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int ipb2_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int joomla_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int postgresql_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int netscreen_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int keccak_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int lm_parse_hash                 (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md4_parse_hash                (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md4s_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md5_parse_hash                (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md5s_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md5half_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md5md5_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md5pix_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md5asa_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md5apr1_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md5crypt_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int mssql2000_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int mssql2005_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int netntlmv1_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int netntlmv2_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int oracleh_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int oracles_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int oraclet_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int osc_parse_hash                (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int arubaos_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int osx1_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int osx512_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int phpass_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha1_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha1b64_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha1b64s_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha1s_parse_hash              (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha256_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha256s_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha384_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha512_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha512s_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha512crypt_parse_hash        (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int smf_parse_hash                (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int vb3_parse_hash                (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int vb30_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int wpa_parse_hash                (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int psafe2_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int psafe3_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int ikepsk_md5_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int ikepsk_sha1_parse_hash        (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int androidpin_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int ripemd160_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int whirlpool_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int truecrypt_parse_hash_1k       (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int truecrypt_parse_hash_2k       (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int md5aix_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha256aix_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha512aix_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int agilekey_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha1aix_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int lastpass_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int gost_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha256crypt_parse_hash        (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int mssql2012_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha512osx_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int episerver4_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha512grub_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha512b64s_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int hmacsha1_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int hmacsha256_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int hmacsha512_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int hmacmd5_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int krb5pa_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int krb5tgs_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sapb_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sapg_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int drupal7_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sybasease_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int mysql323_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int rakp_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int netscaler_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int chap_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int cloudkey_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int nsec3_parse_hash              (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int wbb3_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int racf_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int lotus5_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int lotus6_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int lotus8_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int hmailserver_parse_hash        (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int phps_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int mediawiki_b_parse_hash        (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int peoplesoft_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int skype_parse_hash              (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int androidfde_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int scrypt_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int juniper_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int cisco8_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int cisco9_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int office2007_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int office2010_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int office2013_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int oldoffice01_parse_hash        (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int oldoffice01cm1_parse_hash     (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int oldoffice01cm2_parse_hash     (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int oldoffice34_parse_hash        (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int oldoffice34cm1_parse_hash     (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int oldoffice34cm2_parse_hash     (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int radmin2_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int djangosha1_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int djangopbkdf2_parse_hash       (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int siphash_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int crammd5_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int saph_sha1_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int redmine_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pdf11_parse_hash              (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pdf11cm1_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pdf11cm2_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pdf14_parse_hash              (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pdf17l3_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pdf17l8_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pbkdf2_sha256_parse_hash      (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int prestashop_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int postgresql_auth_parse_hash    (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int mysql_auth_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int bitcoin_wallet_parse_hash     (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sip_auth_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int crc32_parse_hash              (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int seven_zip_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int gost2012sbog_256_parse_hash   (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int gost2012sbog_512_parse_hash   (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pbkdf2_md5_parse_hash         (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pbkdf2_sha1_parse_hash        (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pbkdf2_sha512_parse_hash      (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int ecryptfs_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int bsdicrypt_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int rar3hp_parse_hash             (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int rar5_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int cf10_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int mywallet_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int ms_drsr_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int androidfde_samsung_parse_hash (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int axcrypt_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int sha1axcrypt_parse_hash        (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int keepass_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int pstoken_parse_hash            (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int zip2_parse_hash               (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int veracrypt_parse_hash_200000   (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int veracrypt_parse_hash_500000   (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int veracrypt_parse_hash_327661   (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int veracrypt_parse_hash_655331   (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int win8phone_parse_hash          (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
-int opencart_parse_hash           (char *input_buf, u32 input_len, hash_t *hash_buf, const hashconfig_t *hashconfig);
+int bcrypt_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int cisco4_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int dcc_parse_hash                (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int dcc2_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int descrypt_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int des_parse_hash                (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int episerver_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int ipb2_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int joomla_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int postgresql_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int netscreen_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int keccak_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int lm_parse_hash                 (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md4_parse_hash                (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md5_parse_hash                (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md5s_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md5half_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md5md5_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md5pix_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md5asa_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md5apr1_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md5crypt_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int mssql2000_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int mssql2005_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int netntlmv1_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int netntlmv2_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int oracleh_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int oracles_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int oraclet_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int osc_parse_hash                (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int arubaos_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int osx1_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int osx512_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int phpass_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha1_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha1b64_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha1b64s_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha1s_parse_hash              (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha1sha1_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha224_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha256_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha256s_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha384_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha512_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha512s_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha512crypt_parse_hash        (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int smf_parse_hash                (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int vb3_parse_hash                (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int vb30_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int wpa_parse_hash                (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int psafe2_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int psafe3_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int ikepsk_md5_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int ikepsk_sha1_parse_hash        (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int androidpin_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int ripemd160_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int whirlpool_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int truecrypt_parse_hash_1k       (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int truecrypt_parse_hash_2k       (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int md5aix_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha256aix_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha512aix_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int agilekey_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha1aix_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int lastpass_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int gost_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha256crypt_parse_hash        (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int mssql2012_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha512osx_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int episerver4_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha512grub_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha512b64s_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int hmacsha1_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int hmacsha256_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int hmacsha512_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int hmacmd5_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int krb5pa_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int krb5tgs_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sapb_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sapg_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int drupal7_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sybasease_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int mysql323_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int rakp_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int netscaler_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int chap_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int cloudkey_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int nsec3_parse_hash              (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int wbb3_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int racf_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int lotus5_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int lotus6_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int lotus8_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int hmailserver_parse_hash        (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int phps_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int mediawiki_b_parse_hash        (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int peoplesoft_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int skype_parse_hash              (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int androidfde_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int scrypt_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int juniper_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int cisco8_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int cisco9_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int office2007_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int office2010_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int office2013_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int oldoffice01_parse_hash        (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int oldoffice01cm1_parse_hash     (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int oldoffice01cm2_parse_hash     (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int oldoffice34_parse_hash        (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int oldoffice34cm1_parse_hash     (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int oldoffice34cm2_parse_hash     (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int radmin2_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int djangosha1_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int djangopbkdf2_parse_hash       (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int siphash_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int crammd5_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int saph_sha1_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int redmine_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int punbb_parse_hash              (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pdf11_parse_hash              (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pdf11cm1_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pdf11cm2_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pdf14_parse_hash              (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pdf17l3_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pdf17l8_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pbkdf2_sha256_parse_hash      (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int prestashop_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int postgresql_auth_parse_hash    (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int mysql_auth_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int bitcoin_wallet_parse_hash     (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sip_auth_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int crc32_parse_hash              (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int seven_zip_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int gost2012sbog_256_parse_hash   (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int gost2012sbog_512_parse_hash   (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pbkdf2_md5_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pbkdf2_sha1_parse_hash        (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pbkdf2_sha512_parse_hash      (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int ecryptfs_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int bsdicrypt_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int rar3hp_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int rar5_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int cf10_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int mywallet_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int ms_drsr_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int androidfde_samsung_parse_hash (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int axcrypt_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha1axcrypt_parse_hash        (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int keepass_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int pstoken_parse_hash            (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int zip2_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int veracrypt_parse_hash_200000   (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int veracrypt_parse_hash_500000   (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int veracrypt_parse_hash_327661   (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int veracrypt_parse_hash_655331   (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int win8phone_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int opencart_parse_hash           (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int plaintext_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha1cx_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int luks_parse_hash               (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED       hashconfig_t *hashconfig, const int keyslot_idx);
+int itunes_backup_parse_hash      (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int skip32_parse_hash             (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int fortigate_parse_hash          (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int sha256b64s_parse_hash         (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+int filezilla_server_parse_hash   (u8 *input_buf, u32 input_len, hash_t *hash_buf, MAYBE_UNUSED const hashconfig_t *hashconfig);
+
+/**
+ * hook functions
+ */
+
+void seven_zip_hook_func (hc_device_param_t *device_param, hashes_t *hashes, const u32 salt_pos, const u32 pws_cnt);
 
 /**
  * output functions
@@ -1505,16 +1738,20 @@ char *stroptitype (const u32 opti_type);
 char *strhashtype (const u32 hash_mode);
 char *strparser   (const u32 parser_status);
 
-void to_hccap_t (hccap_t *hccap, const u32 salt_pos, const u32 digest_pos, const hashconfig_t *hashconfig, const hashes_t *hashes);
+int check_old_hccap (const char *hashfile);
+void to_hccapx_t (hashcat_ctx_t *hashcat_ctx, hccapx_t *hccapx, const u32 salt_pos, const u32 digest_pos);
 
-void ascii_digest (char *out_buf, const u32 salt_pos, const u32 digest_pos, const hashconfig_t *hashconfig, const hashes_t *hashes);
+void wpa_essid_reuse      (hashcat_ctx_t *hashcat_ctx);
+void wpa_essid_reuse_next (hashcat_ctx_t *hashcat_ctx, const u32 salt_idx_cracked);
 
-int     hashconfig_init                   (hashconfig_t *hashconfig, const user_options_t *user_options);
-void    hashconfig_destroy                (hashconfig_t *hashconfig);
-u32     hashconfig_enforce_kernel_threads (const hashconfig_t *hashconfig, const hc_device_param_t *device_param);
-u32     hashconfig_enforce_kernel_loops   (const hashconfig_t *hashconfig, const user_options_t *user_options);
-void    hashconfig_general_defaults       (hashconfig_t *hashconfig, hashes_t *hashes, const user_options_t *user_options);
-void    hashconfig_benchmark_defaults     (const hashconfig_t *hashconfig, salt_t *salt, void *esalt);
-char   *hashconfig_benchmark_mask         (const hashconfig_t *hashconfig);
+int ascii_digest (hashcat_ctx_t *hashcat_ctx, char *out_buf, const size_t out_len, const u32 salt_pos, const u32 digest_pos);
+
+int     hashconfig_init               (hashcat_ctx_t *hashcat_ctx);
+void    hashconfig_destroy            (hashcat_ctx_t *hashcat_ctx);
+u32     hashconfig_get_kernel_threads (hashcat_ctx_t *hashcat_ctx, const hc_device_param_t *device_param);
+u32     hashconfig_get_kernel_loops   (hashcat_ctx_t *hashcat_ctx);
+int     hashconfig_general_defaults   (hashcat_ctx_t *hashcat_ctx);
+void    hashconfig_benchmark_defaults (hashcat_ctx_t *hashcat_ctx, salt_t *salt, void *esalt, void *hook_salt);
+char   *hashconfig_benchmark_mask     (hashcat_ctx_t *hashcat_ctx);
 
 #endif // _INTERFACE_H

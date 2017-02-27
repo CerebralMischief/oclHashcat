@@ -1,9 +1,12 @@
-hashcat v3.10
+hashcat v3.40
 =============
 
-AMD users require AMD drivers 14.9 or later (recommended 15.12)
-Intel users require Intel OpenCL Runtime 14.2 or later (recommended 16.1 or later)
-NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later)
+AMD users on Windows require "AMD Radeon Software Crimson Edition" (15.12 or later)
+AMD users on Linux require "AMDGPU-Pro Driver" (16.40 or later)
+Intel CPU users require "OpenCL Runtime for Intel Core and Intel Xeon Processors" (16.1.1 or later)
+Intel GPU on Windows users require "OpenCL Driver for Intel Iris and Intel HD Graphics"
+Intel GPU on Linux users require "OpenCL 2.0 GPU Driver Package for Linux" (2.0 or later)
+NVidia users require "NVIDIA Driver" (367.x or later)
 
 ##
 ## Features
@@ -28,7 +31,7 @@ NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later
 - Supports automatic keyspace ordering markov-chains
 - Built-in benchmarking system
 - Integrated thermal watchdog
-- 160+ Hash-types implemented with performance in mind
+- 200+ Hash-types implemented with performance in mind
 
 ##
 ## Hash-Types
@@ -38,11 +41,13 @@ NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later
 - MD5
 - Half MD5 (left, mid, right)
 - SHA1
+- SHA-224
 - SHA-256
 - SHA-384
 - SHA-512
 - SHA-3 (Keccak)
 - SipHash
+- Skip32
 - RipeMD160
 - Whirlpool
 - DES (PT = $salt, key = $pass)
@@ -50,22 +55,27 @@ NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later
 - GOST R 34.11-94
 - GOST R 34.11-2012 (Streebog) 256-bit
 - GOST R 34.11-2012 (Streebog) 512-bit
-- Double MD5
-- Double SHA1
 - md5($pass.$salt)
 - md5($salt.$pass)
 - md5(unicode($pass).$salt)
 - md5($salt.unicode($pass))
-- md5(sha1($pass))
-- md5($salt.md5($pass))
 - md5($salt.$pass.$salt)
+- md5($salt.md5($pass))
+- md5($salt.md5($salt.$pass))
+- md5($salt.md5($pass.$salt))
+- md5(md5($pass))
+- md5(md5($pass).md5($salt))
 - md5(strtoupper(md5($pass)))
+- md5(sha1($pass))
 - sha1($pass.$salt)
 - sha1($salt.$pass)
 - sha1(unicode($pass).$salt)
 - sha1($salt.unicode($pass))
+- sha1(sha1($pass))
+- sha1($salt.sha1($pass))
 - sha1(md5($pass))
 - sha1($salt.$pass.$salt)
+- sha1(CX)
 - sha256($pass.$salt)
 - sha256($salt.$pass)
 - sha256(unicode($pass).$salt)
@@ -129,6 +139,7 @@ NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later
 - Kerberos 5 AS-REQ Pre-Auth etype 23
 - Kerberos 5 TGS-REP etype 23
 - Netscape LDAP SHA/SSHA
+- FileZilla Server
 - LM
 - NTLM
 - Domain Cached Credentials (DCC), MS Cache
@@ -148,6 +159,8 @@ NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later
 - OSX v10.8
 - OSX v10.9
 - OSX v10.10
+- iTunes Backup < 10.0
+- iTunes Backup >= 10.0
 - AIX {smd5}
 - AIX {ssha1}
 - AIX {ssha256}
@@ -159,6 +172,7 @@ NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later
 - Cisco $9$
 - Juniper IVE
 - Juniper Netscreen/SSG (ScreenOS)
+- Fortigate (FortiOS)
 - Android PIN
 - Windows 8+ phone PIN/Password
 - GRUB 2
@@ -166,6 +180,7 @@ NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later
 - RACF
 - Radmin2
 - Redmine
+- PunBB
 - OpenCart
 - Citrix Netscaler
 - SAP CODVN B (BCODE)
@@ -200,11 +215,13 @@ NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later
 - Password Safe v2
 - Password Safe v3
 - Keepass 1 (AES/Twofish) and Keepass 2 (AES)
+- Plaintext
 - eCryptfs
 - Android FDE <= 4.3
 - Android FDE (Samsung DEK)
 - TrueCrypt
 - VeraCrypt
+- LUKS
 
 ##
 ## Attack-Modes
@@ -234,7 +251,7 @@ NVidia users require NVidia drivers 346.59 or later (recommended 367.27 or later
 ##
 
 - GPU
-- CPU 
+- CPU
 - APU
 - DSP
 - FPGA

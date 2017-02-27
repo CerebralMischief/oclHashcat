@@ -3,8 +3,6 @@
  * License.....: MIT
  */
 
-#define _PDF17L8_
-
 #include "inc_vendor.cl"
 #include "inc_hash_constants.h"
 #include "inc_hash_functions.cl"
@@ -34,7 +32,7 @@ typedef struct
 
 } ctx_t;
 
-__constant u32 k_sha256[64] =
+__constant u32a k_sha256[64] =
 {
   SHA256C00, SHA256C01, SHA256C02, SHA256C03,
   SHA256C04, SHA256C05, SHA256C06, SHA256C07,
@@ -54,7 +52,7 @@ __constant u32 k_sha256[64] =
   SHA256C3c, SHA256C3d, SHA256C3e, SHA256C3f,
 };
 
-void sha256_transform (const u32 w0[4], const u32 w1[4], const u32 w2[4], const u32 w3[4], u32 digest[8])
+void sha256_transform (const u32 *w0, const u32 *w1, const u32 *w2, const u32 *w3, u32 *digest)
 {
   u32 a = digest[0];
   u32 b = digest[1];
@@ -142,31 +140,31 @@ void sha256_transform (const u32 w0[4], const u32 w1[4], const u32 w2[4], const 
   digest[7] += h;
 }
 
-__constant u64 k_sha384[80] =
+__constant u64a k_sha384[80] =
 {
-  SHA384C00, SHA384C01, SHA384C02, SHA384C03,
-  SHA384C04, SHA384C05, SHA384C06, SHA384C07,
-  SHA384C08, SHA384C09, SHA384C0a, SHA384C0b,
-  SHA384C0c, SHA384C0d, SHA384C0e, SHA384C0f,
-  SHA384C10, SHA384C11, SHA384C12, SHA384C13,
-  SHA384C14, SHA384C15, SHA384C16, SHA384C17,
-  SHA384C18, SHA384C19, SHA384C1a, SHA384C1b,
-  SHA384C1c, SHA384C1d, SHA384C1e, SHA384C1f,
-  SHA384C20, SHA384C21, SHA384C22, SHA384C23,
-  SHA384C24, SHA384C25, SHA384C26, SHA384C27,
-  SHA384C28, SHA384C29, SHA384C2a, SHA384C2b,
-  SHA384C2c, SHA384C2d, SHA384C2e, SHA384C2f,
-  SHA384C30, SHA384C31, SHA384C32, SHA384C33,
-  SHA384C34, SHA384C35, SHA384C36, SHA384C37,
-  SHA384C38, SHA384C39, SHA384C3a, SHA384C3b,
-  SHA384C3c, SHA384C3d, SHA384C3e, SHA384C3f,
-  SHA384C40, SHA384C41, SHA384C42, SHA384C43,
-  SHA384C44, SHA384C45, SHA384C46, SHA384C47,
-  SHA384C48, SHA384C49, SHA384C4a, SHA384C4b,
-  SHA384C4c, SHA384C4d, SHA384C4e, SHA384C4f,
+  SHA512C00, SHA512C01, SHA512C02, SHA512C03,
+  SHA512C04, SHA512C05, SHA512C06, SHA512C07,
+  SHA512C08, SHA512C09, SHA512C0a, SHA512C0b,
+  SHA512C0c, SHA512C0d, SHA512C0e, SHA512C0f,
+  SHA512C10, SHA512C11, SHA512C12, SHA512C13,
+  SHA512C14, SHA512C15, SHA512C16, SHA512C17,
+  SHA512C18, SHA512C19, SHA512C1a, SHA512C1b,
+  SHA512C1c, SHA512C1d, SHA512C1e, SHA512C1f,
+  SHA512C20, SHA512C21, SHA512C22, SHA512C23,
+  SHA512C24, SHA512C25, SHA512C26, SHA512C27,
+  SHA512C28, SHA512C29, SHA512C2a, SHA512C2b,
+  SHA512C2c, SHA512C2d, SHA512C2e, SHA512C2f,
+  SHA512C30, SHA512C31, SHA512C32, SHA512C33,
+  SHA512C34, SHA512C35, SHA512C36, SHA512C37,
+  SHA512C38, SHA512C39, SHA512C3a, SHA512C3b,
+  SHA512C3c, SHA512C3d, SHA512C3e, SHA512C3f,
+  SHA512C40, SHA512C41, SHA512C42, SHA512C43,
+  SHA512C44, SHA512C45, SHA512C46, SHA512C47,
+  SHA512C48, SHA512C49, SHA512C4a, SHA512C4b,
+  SHA512C4c, SHA512C4d, SHA512C4e, SHA512C4f,
 };
 
-void sha384_transform (const u64 w0[4], const u64 w1[4], const u64 w2[4], const u64 w3[4], u64 digest[8])
+void sha384_transform (const u64 *w0, const u64 *w1, const u64 *w2, const u64 *w3, u64 *digest)
 {
   u64 a = digest[0];
   u64 b = digest[1];
@@ -254,31 +252,31 @@ void sha384_transform (const u64 w0[4], const u64 w1[4], const u64 w2[4], const 
   digest[7] += h;
 }
 
-__constant u64 k_sha512[80] =
+__constant u64a k_sha512[80] =
 {
-  SHA384C00, SHA384C01, SHA384C02, SHA384C03,
-  SHA384C04, SHA384C05, SHA384C06, SHA384C07,
-  SHA384C08, SHA384C09, SHA384C0a, SHA384C0b,
-  SHA384C0c, SHA384C0d, SHA384C0e, SHA384C0f,
-  SHA384C10, SHA384C11, SHA384C12, SHA384C13,
-  SHA384C14, SHA384C15, SHA384C16, SHA384C17,
-  SHA384C18, SHA384C19, SHA384C1a, SHA384C1b,
-  SHA384C1c, SHA384C1d, SHA384C1e, SHA384C1f,
-  SHA384C20, SHA384C21, SHA384C22, SHA384C23,
-  SHA384C24, SHA384C25, SHA384C26, SHA384C27,
-  SHA384C28, SHA384C29, SHA384C2a, SHA384C2b,
-  SHA384C2c, SHA384C2d, SHA384C2e, SHA384C2f,
-  SHA384C30, SHA384C31, SHA384C32, SHA384C33,
-  SHA384C34, SHA384C35, SHA384C36, SHA384C37,
-  SHA384C38, SHA384C39, SHA384C3a, SHA384C3b,
-  SHA384C3c, SHA384C3d, SHA384C3e, SHA384C3f,
-  SHA384C40, SHA384C41, SHA384C42, SHA384C43,
-  SHA384C44, SHA384C45, SHA384C46, SHA384C47,
-  SHA384C48, SHA384C49, SHA384C4a, SHA384C4b,
-  SHA384C4c, SHA384C4d, SHA384C4e, SHA384C4f,
+  SHA512C00, SHA512C01, SHA512C02, SHA512C03,
+  SHA512C04, SHA512C05, SHA512C06, SHA512C07,
+  SHA512C08, SHA512C09, SHA512C0a, SHA512C0b,
+  SHA512C0c, SHA512C0d, SHA512C0e, SHA512C0f,
+  SHA512C10, SHA512C11, SHA512C12, SHA512C13,
+  SHA512C14, SHA512C15, SHA512C16, SHA512C17,
+  SHA512C18, SHA512C19, SHA512C1a, SHA512C1b,
+  SHA512C1c, SHA512C1d, SHA512C1e, SHA512C1f,
+  SHA512C20, SHA512C21, SHA512C22, SHA512C23,
+  SHA512C24, SHA512C25, SHA512C26, SHA512C27,
+  SHA512C28, SHA512C29, SHA512C2a, SHA512C2b,
+  SHA512C2c, SHA512C2d, SHA512C2e, SHA512C2f,
+  SHA512C30, SHA512C31, SHA512C32, SHA512C33,
+  SHA512C34, SHA512C35, SHA512C36, SHA512C37,
+  SHA512C38, SHA512C39, SHA512C3a, SHA512C3b,
+  SHA512C3c, SHA512C3d, SHA512C3e, SHA512C3f,
+  SHA512C40, SHA512C41, SHA512C42, SHA512C43,
+  SHA512C44, SHA512C45, SHA512C46, SHA512C47,
+  SHA512C48, SHA512C49, SHA512C4a, SHA512C4b,
+  SHA512C4c, SHA512C4d, SHA512C4e, SHA512C4f,
 };
 
-void sha512_transform (const u64 w0[4], const u64 w1[4], const u64 w2[4], const u64 w3[4], u64 digest[8])
+void sha512_transform (const u64 *w0, const u64 *w1, const u64 *w2, const u64 *w3, u64 *digest)
 {
   u64 a = digest[0];
   u64 b = digest[1];
@@ -366,7 +364,7 @@ void sha512_transform (const u64 w0[4], const u64 w1[4], const u64 w2[4], const 
   digest[7] += h;
 }
 
-__constant u32 te0[256] =
+__constant u32a te0[256] =
 {
   0xc66363a5, 0xf87c7c84, 0xee777799, 0xf67b7b8d,
   0xfff2f20d, 0xd66b6bbd, 0xde6f6fb1, 0x91c5c554,
@@ -434,7 +432,7 @@ __constant u32 te0[256] =
   0x7bb0b0cb, 0xa85454fc, 0x6dbbbbd6, 0x2c16163a,
 };
 
-__constant u32 te1[256] =
+__constant u32a te1[256] =
 {
   0xa5c66363, 0x84f87c7c, 0x99ee7777, 0x8df67b7b,
   0x0dfff2f2, 0xbdd66b6b, 0xb1de6f6f, 0x5491c5c5,
@@ -502,7 +500,7 @@ __constant u32 te1[256] =
   0xcb7bb0b0, 0xfca85454, 0xd66dbbbb, 0x3a2c1616,
 };
 
-__constant u32 te2[256] =
+__constant u32a te2[256] =
 {
   0x63a5c663, 0x7c84f87c, 0x7799ee77, 0x7b8df67b,
   0xf20dfff2, 0x6bbdd66b, 0x6fb1de6f, 0xc55491c5,
@@ -570,7 +568,7 @@ __constant u32 te2[256] =
   0xb0cb7bb0, 0x54fca854, 0xbbd66dbb, 0x163a2c16,
 };
 
-__constant u32 te3[256] =
+__constant u32a te3[256] =
 {
   0x6363a5c6, 0x7c7c84f8, 0x777799ee, 0x7b7b8df6,
   0xf2f20dff, 0x6b6bbdd6, 0x6f6fb1de, 0xc5c55491,
@@ -638,7 +636,7 @@ __constant u32 te3[256] =
   0xb0b0cb7b, 0x5454fca8, 0xbbbbd66d, 0x16163a2c,
 };
 
-__constant u32 te4[256] =
+__constant u32a te4[256] =
 {
   0x63636363, 0x7c7c7c7c, 0x77777777, 0x7b7b7b7b,
   0xf2f2f2f2, 0x6b6b6b6b, 0x6f6f6f6f, 0xc5c5c5c5,
@@ -706,7 +704,7 @@ __constant u32 te4[256] =
   0xb0b0b0b0, 0x54545454, 0xbbbbbbbb, 0x16161616,
 };
 
-__constant u32 rcon[] =
+__constant u32a rcon[] =
 {
   0x01000000, 0x02000000, 0x04000000, 0x08000000,
   0x10000000, 0x20000000, 0x40000000, 0x80000000,
@@ -1516,7 +1514,7 @@ u32 do_round (const u32 *pw, const u32 pw_len, ctx_t *ctx, __local u32 *s_te0, _
   return ex;
 }
 
-__kernel void m10700_init (__global pw_t *pws, __global kernel_rule_t *rules_buf, __global comb_t *combs_buf, __global bf_t *bfs_buf, __global pdf17l8_tmp_t *tmps, __global void *hooks, __global u32 *bitmaps_buf_s1_a, __global u32 *bitmaps_buf_s1_b, __global u32 *bitmaps_buf_s1_c, __global u32 *bitmaps_buf_s1_d, __global u32 *bitmaps_buf_s2_a, __global u32 *bitmaps_buf_s2_b, __global u32 *bitmaps_buf_s2_c, __global u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global digest_t *digests_buf, __global u32 *hashes_shown, __global salt_t *salt_bufs, __global pdf_t *pdf_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
+__kernel void m10700_init (__global pw_t *pws, __global const kernel_rule_t *rules_buf, __global const comb_t *combs_buf, __global const bf_t *bfs_buf, __global pdf17l8_tmp_t *tmps, __global void *hooks, __global const u32 *bitmaps_buf_s1_a, __global const u32 *bitmaps_buf_s1_b, __global const u32 *bitmaps_buf_s1_c, __global const u32 *bitmaps_buf_s1_d, __global const u32 *bitmaps_buf_s2_a, __global const u32 *bitmaps_buf_s2_b, __global const u32 *bitmaps_buf_s2_c, __global const u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global const digest_t *digests_buf, __global u32 *hashes_shown, __global const salt_t *salt_bufs, __global pdf_t *pdf_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
 {
   /**
    * base
@@ -1622,7 +1620,7 @@ __kernel void m10700_init (__global pw_t *pws, __global kernel_rule_t *rules_buf
   tmps[gid].W_len     = WORDSZ256;
 }
 
-__kernel void m10700_loop (__global pw_t *pws, __global kernel_rule_t *rules_buf, __global comb_t *combs_buf, __global bf_t *bfs_buf, __global pdf17l8_tmp_t *tmps, __global void *hooks, __global u32 *bitmaps_buf_s1_a, __global u32 *bitmaps_buf_s1_b, __global u32 *bitmaps_buf_s1_c, __global u32 *bitmaps_buf_s1_d, __global u32 *bitmaps_buf_s2_a, __global u32 *bitmaps_buf_s2_b, __global u32 *bitmaps_buf_s2_c, __global u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global digest_t *digests_buf, __global u32 *hashes_shown, __global salt_t *salt_bufs, __global pdf_t *pdf_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
+__kernel void m10700_loop (__global pw_t *pws, __global const kernel_rule_t *rules_buf, __global const comb_t *combs_buf, __global const bf_t *bfs_buf, __global pdf17l8_tmp_t *tmps, __global void *hooks, __global const u32 *bitmaps_buf_s1_a, __global const u32 *bitmaps_buf_s1_b, __global const u32 *bitmaps_buf_s1_c, __global const u32 *bitmaps_buf_s1_d, __global const u32 *bitmaps_buf_s2_a, __global const u32 *bitmaps_buf_s2_b, __global const u32 *bitmaps_buf_s2_c, __global const u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global const digest_t *digests_buf, __global u32 *hashes_shown, __global const salt_t *salt_bufs, __global pdf_t *pdf_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
 {
   /**
    * base
@@ -1714,7 +1712,7 @@ __kernel void m10700_loop (__global pw_t *pws, __global kernel_rule_t *rules_buf
   tmps[gid].W_len     = ctx.W_len;
 }
 
-__kernel void m10700_comp (__global pw_t *pws, __global kernel_rule_t *rules_buf, __global comb_t *combs_buf, __global bf_t *bfs_buf, __global pdf17l8_tmp_t *tmps, __global void *hooks, __global u32 *bitmaps_buf_s1_a, __global u32 *bitmaps_buf_s1_b, __global u32 *bitmaps_buf_s1_c, __global u32 *bitmaps_buf_s1_d, __global u32 *bitmaps_buf_s2_a, __global u32 *bitmaps_buf_s2_b, __global u32 *bitmaps_buf_s2_c, __global u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global digest_t *digests_buf, __global u32 *hashes_shown, __global salt_t *salt_bufs, __global pdf_t *pdf_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
+__kernel void m10700_comp (__global pw_t *pws, __global const kernel_rule_t *rules_buf, __global const comb_t *combs_buf, __global const bf_t *bfs_buf, __global pdf17l8_tmp_t *tmps, __global void *hooks, __global const u32 *bitmaps_buf_s1_a, __global const u32 *bitmaps_buf_s1_b, __global const u32 *bitmaps_buf_s1_c, __global const u32 *bitmaps_buf_s1_d, __global const u32 *bitmaps_buf_s2_a, __global const u32 *bitmaps_buf_s2_b, __global const u32 *bitmaps_buf_s2_c, __global const u32 *bitmaps_buf_s2_d, __global plain_t *plains_buf, __global const digest_t *digests_buf, __global u32 *hashes_shown, __global const salt_t *salt_bufs, __global pdf_t *pdf_bufs, __global u32 *d_return_buf, __global u32 *d_scryptV0_buf, __global u32 *d_scryptV1_buf, __global u32 *d_scryptV2_buf, __global u32 *d_scryptV3_buf, const u32 bitmap_mask, const u32 bitmap_shift1, const u32 bitmap_shift2, const u32 salt_pos, const u32 loop_pos, const u32 loop_cnt, const u32 il_cnt, const u32 digests_cnt, const u32 digests_offset, const u32 combs_mode, const u32 gid_max)
 {
   /**
    * modifier

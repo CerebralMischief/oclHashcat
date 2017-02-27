@@ -3,10 +3,6 @@
  * License.....: MIT
  */
 
-#if defined (__APPLE__)
-#include <stdio.h>
-#endif
-
 #include "common.h"
 #include "types.h"
 #include "rp.h"
@@ -67,11 +63,10 @@ static int mangle_trest (char arr[BLOCK_SIZE], int arr_len)
 static int mangle_reverse (char arr[BLOCK_SIZE], int arr_len)
 {
   int l;
-  int r;
 
   for (l = 0; l < arr_len; l++)
   {
-    r = arr_len - 1 - l;
+    int r = arr_len - 1 - l;
 
     if (l >= r) break;
 
@@ -204,7 +199,7 @@ static int mangle_omit (char arr[BLOCK_SIZE], int arr_len, int upos, int ulen)
 {
   if (upos >= arr_len) return (arr_len);
 
-  if ((upos + ulen) >= arr_len) return (arr_len);
+  if ((upos + ulen) > arr_len) return (arr_len);
 
   int arr_pos;
 
@@ -724,14 +719,14 @@ int _old_apply_rule (char *rule, int rule_len, char in[BLOCK_SIZE], int in_len, 
 
       case RULE_OP_MANGLE_APPEND_MEMORY:
         if (mem_len < 1) return (RULE_RC_REJECT_ERROR);
-        if ((out_len + mem_len) > BLOCK_SIZE) return (RULE_RC_REJECT_ERROR);
+        if ((out_len + mem_len) >= BLOCK_SIZE) return (RULE_RC_REJECT_ERROR);
         memcpy (out + out_len, mem, mem_len);
         out_len += mem_len;
         break;
 
       case RULE_OP_MANGLE_PREPEND_MEMORY:
         if (mem_len < 1) return (RULE_RC_REJECT_ERROR);
-        if ((mem_len + out_len) > BLOCK_SIZE) return (RULE_RC_REJECT_ERROR);
+        if ((mem_len + out_len) >= BLOCK_SIZE) return (RULE_RC_REJECT_ERROR);
         memcpy (mem + mem_len, out, out_len);
         out_len += mem_len;
         memcpy (out, mem, out_len);
