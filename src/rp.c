@@ -6,6 +6,7 @@
 #include "common.h"
 #include "types.h"
 #include "memory.h"
+#include "convert.h"
 #include "event.h"
 #include "shared.h"
 #include "filehandling.h"
@@ -58,7 +59,8 @@ static const char grp_op_chr[] =
 {
   RULE_OP_MANGLE_APPEND,
   RULE_OP_MANGLE_PREPEND,
-  RULE_OP_MANGLE_PURGECHAR
+  RULE_OP_MANGLE_PURGECHAR,
+  RULE_OP_MANGLE_TITLE_SEP
 };
 
 static const char grp_op_chr_chr[] =
@@ -110,33 +112,21 @@ bool class_alpha (const u8 c)
 
 int conv_ctoi (const u8 c)
 {
-  if (class_num (c))
-  {
-    return c - '0';
-  }
-  else if (class_upper (c))
-  {
-    return c - 'A' + 10;
-  }
+  if (class_num (c)) return c - '0';
+  if (class_upper (c)) return c - 'A' + 10;
 
   return -1;
 }
 
 int conv_itoc (const u8 c)
 {
-  if (c < 10)
-  {
-    return c + '0';
-  }
-  else if (c < 37)
-  {
-    return c + 'A' - 10;
-  }
+  if (c < 10) return c + '0';
+  if (c < 37) return c + 'A' - 10;
 
   return -1;
 }
 
-int generate_random_rule (char rule_buf[RP_RULE_BUFSIZ], const u32 rp_gen_func_min, const u32 rp_gen_func_max)
+int generate_random_rule (char rule_buf[RP_RULE_SIZE], const u32 rp_gen_func_min, const u32 rp_gen_func_max)
 {
   u32 rp_gen_num = get_random_num (rp_gen_func_min, rp_gen_func_max);
 
@@ -228,16 +218,29 @@ int generate_random_rule (char rule_buf[RP_RULE_BUFSIZ], const u32 rp_gen_func_m
 #define INCR_POS if (++rule_pos == rule_len) return (-1)
 
 #define SET_NAME(rule,val) (rule)->cmds[rule_cnt]  = ((val) & 0xff) <<  0
-#define SET_P0(rule,val)   INCR_POS; (rule)->cmds[rule_cnt] |= ((val) & 0xff) <<  8
-#define SET_P1(rule,val)   INCR_POS; (rule)->cmds[rule_cnt] |= ((val) & 0xff) << 16
+#define SET_P0(rule,val)   INCR_POS; if (is_hex_notation (rule_buf, rule_len, rule_pos) == true) { (rule)->cmds[rule_cnt] |= (hex_convert (rule_buf[rule_pos + 3] & 0xff) <<  8) | (hex_convert (rule_buf[rule_pos + 2] & 0xff) << 12); rule_pos += 3; } else { (rule)->cmds[rule_cnt] |= ((val) & 0xff) <<  8; }
+#define SET_P1(rule,val)   INCR_POS; if (is_hex_notation (rule_buf, rule_len, rule_pos) == true) { (rule)->cmds[rule_cnt] |= (hex_convert (rule_buf[rule_pos + 3] & 0xff) << 16) | (hex_convert (rule_buf[rule_pos + 2] & 0xff) << 20); rule_pos += 3; } else { (rule)->cmds[rule_cnt] |= ((val) & 0xff) <<  16; }
 #define GET_NAME(rule)     rule_cmd = (((rule)->cmds[rule_cnt] >>  0) & 0xff)
 #define GET_P0(rule)       INCR_POS; rule_buf[rule_pos] = (((rule)->cmds[rule_cnt] >>  8) & 0xff)
 #define GET_P1(rule)       INCR_POS; rule_buf[rule_pos] = (((rule)->cmds[rule_cnt] >> 16) & 0xff)
 
 #define SET_P0_CONV(rule,val)  INCR_POS; (rule)->cmds[rule_cnt] |= ((conv_ctoi (val)) & 0xff) <<  8
 #define SET_P1_CONV(rule,val)  INCR_POS; (rule)->cmds[rule_cnt] |= ((conv_ctoi (val)) & 0xff) << 16
-#define GET_P0_CONV(rule)      INCR_POS; rule_buf[rule_pos] = conv_itoc (((rule)->cmds[rule_cnt] >>  8) & 0xff)
-#define GET_P1_CONV(rule)      INCR_POS; rule_buf[rule_pos] = conv_itoc (((rule)->cmds[rule_cnt] >> 16) & 0xff)
+#define GET_P0_CONV(rule)      INCR_POS; rule_buf[rule_pos] = (char) conv_itoc (((rule)->cmds[rule_cnt] >>  8) & 0xff)
+#define GET_P1_CONV(rule)      INCR_POS; rule_buf[rule_pos] = (char) conv_itoc (((rule)->cmds[rule_cnt] >> 16) & 0xff)
+
+bool is_hex_notation (const char *rule_buf, u32 rule_len, u32 rule_pos)
+{
+  if ((rule_pos + 4) > rule_len) return false;
+
+  if (rule_buf[rule_pos + 0] != '\\') return false;
+  if (rule_buf[rule_pos + 1] != 'x')  return false;
+
+  if (is_valid_hex_char (rule_buf[rule_pos + 2]) == false) return false;
+  if (is_valid_hex_char (rule_buf[rule_pos + 3]) == false) return false;
+
+  return true;
+}
 
 int cpu_rule_to_kernel_rule (char *rule_buf, u32 rule_len, kernel_rule_t *rule)
 {
@@ -442,6 +445,11 @@ int cpu_rule_to_kernel_rule (char *rule_buf, u32 rule_len, kernel_rule_t *rule)
 
       case RULE_OP_MANGLE_TITLE:
         SET_NAME (rule, rule_buf[rule_pos]);
+        break;
+
+      case RULE_OP_MANGLE_TITLE_SEP:
+        SET_NAME (rule, rule_buf[rule_pos]);
+        SET_P0   (rule, rule_buf[rule_pos]);
         break;
 
       default:
@@ -662,6 +670,11 @@ int kernel_rule_to_cpu_rule (char *rule_buf, kernel_rule_t *rule)
         rule_buf[rule_pos] = rule_cmd;
         break;
 
+      case RULE_OP_MANGLE_TITLE_SEP:
+        rule_buf[rule_pos] = rule_cmd;
+        GET_P0 (rule);
+        break;
+
       case 0:
         if (rule_pos == 0) return -1;
         return rule_pos - 1;
@@ -708,7 +721,7 @@ int kernel_rules_load (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 
 
   char *rule_buf = (char *) hcmalloc (HCBUFSIZ_LARGE);
 
-  int rule_len = 0;
+  u32 rule_len = 0;
 
   for (u32 i = 0; i < user_options->rp_files_cnt; i++)
   {
@@ -720,14 +733,11 @@ int kernel_rules_load (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 
 
     char *rp_file = user_options->rp_files[i];
 
-    char in[BLOCK_SIZE]  = { 0 };
-    char out[BLOCK_SIZE] = { 0 };
-
-    FILE *fp = NULL;
+    HCFILE fp;
 
     u32 rule_line = 0;
 
-    if ((fp = fopen (rp_file, "rb")) == NULL)
+    if (hc_fopen (&fp, rp_file, "rb") == false)
     {
       event_log_error (hashcat_ctx, "%s: %s", rp_file, strerror (errno));
 
@@ -739,9 +749,9 @@ int kernel_rules_load (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 
       return -1;
     }
 
-    while (!feof (fp))
+    while (!hc_feof (&fp))
     {
-      rule_len = fgetl (fp, rule_buf);
+      rule_len = (u32) fgetl (&fp, rule_buf, HCBUFSIZ_LARGE);
 
       rule_line++;
 
@@ -756,8 +766,11 @@ int kernel_rules_load (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 
         kernel_rules_avail += INCR_RULES;
       }
 
-      memset (in,  0, BLOCK_SIZE);
-      memset (out, 0, BLOCK_SIZE);
+      char in[RP_PASSWORD_SIZE];
+      char out[RP_PASSWORD_SIZE];
+
+      memset (in,  0, sizeof (in));
+      memset (out, 0, sizeof (out));
 
       int result = _old_apply_rule (rule_buf, rule_len, in, 1, out);
 
@@ -780,7 +793,7 @@ int kernel_rules_load (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 
       kernel_rules_cnt++;
     }
 
-    fclose (fp);
+    hc_fclose (&fp);
 
     all_kernel_rules_cnt[i] = kernel_rules_cnt;
     all_kernel_rules_buf[i] = kernel_rules_buf;
@@ -824,7 +837,7 @@ int kernel_rules_load (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 
       {
         if (out_pos == RULES_MAX - 1)
         {
-          // event_log_warning (hashcat_ctx, "Truncating chaining of rule %d and rule %d as maximum number of function calls per rule exceeded", i, in_off);
+          // event_log_warning (hashcat_ctx, "Truncated chaining of rule %d and rule %d - maximum functions per rule exceeded.", i, in_off);
 
           break;
         }
@@ -841,7 +854,7 @@ int kernel_rules_load (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, u32 
 
   if (kernel_rules_cnt == 0)
   {
-    event_log_error (hashcat_ctx, "No valid rules left");
+    event_log_error (hashcat_ctx, "No valid rules left.");
 
     hcfree (kernel_rules_buf);
 
@@ -861,13 +874,13 @@ int kernel_rules_generate (hashcat_ctx_t *hashcat_ctx, kernel_rule_t **out_buf, 
   u32            kernel_rules_cnt = 0;
   kernel_rule_t *kernel_rules_buf = hccalloc (user_options->rp_gen, sizeof (kernel_rule_t));
 
-  char *rule_buf = (char *) hcmalloc (RP_RULE_BUFSIZ);
+  char *rule_buf = (char *) hcmalloc (RP_RULE_SIZE);
 
   for (kernel_rules_cnt = 0; kernel_rules_cnt < user_options->rp_gen; kernel_rules_cnt++)
   {
-    memset (rule_buf, 0, RP_RULE_BUFSIZ);
+    memset (rule_buf, 0, RP_RULE_SIZE);
 
-    int rule_len = (int) generate_random_rule (rule_buf, user_options->rp_gen_func_min, user_options->rp_gen_func_max);
+    int rule_len = generate_random_rule (rule_buf, user_options->rp_gen_func_min, user_options->rp_gen_func_max);
 
     if (cpu_rule_to_kernel_rule (rule_buf, rule_len, &kernel_rules_buf[kernel_rules_cnt]) == -1) continue;
   }

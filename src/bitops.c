@@ -7,7 +7,7 @@
 #include "types.h"
 #include "bitops.h"
 
-u32 rotl32 (const u32 a, const u32 n)
+u32 rotl32 (const u32 a, const int n)
 {
   #if defined (_MSC_VER)
   return _rotl (a, n);
@@ -16,7 +16,7 @@ u32 rotl32 (const u32 a, const u32 n)
   #endif
 }
 
-u32 rotr32 (const u32 a, const u32 n)
+u32 rotr32 (const u32 a, const int n)
 {
   #if defined (_MSC_VER)
   return _rotr (a, n);
@@ -25,7 +25,7 @@ u32 rotr32 (const u32 a, const u32 n)
   #endif
 }
 
-u64 rotl64 (const u64 a, const u64 n)
+u64 rotl64 (const u64 a, const int n)
 {
   #if defined (_MSC_VER)
   return _rotl64 (a, n);
@@ -34,7 +34,7 @@ u64 rotl64 (const u64 a, const u64 n)
   #endif
 }
 
-u64 rotr64 (const u64 a, const u64 n)
+u64 rotr64 (const u64 a, const int n)
 {
   #if defined (_MSC_VER)
   return _rotr64 (a, n);
@@ -45,8 +45,7 @@ u64 rotr64 (const u64 a, const u64 n)
 
 u16 byte_swap_16 (const u16 n)
 {
-  return (n & 0xff00) >> 8
-       | (n & 0x00ff) << 8;
+  return (u16) ((n >> 8) | (n << 8));
 }
 
 u32 byte_swap_32 (const u32 n)

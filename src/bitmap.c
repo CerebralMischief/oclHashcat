@@ -6,9 +6,30 @@
 #include "common.h"
 #include "types.h"
 #include "memory.h"
+#include "event.h"
 #include "bitmap.h"
 
-static u32 generate_bitmaps (const u32 digests_cnt, const u32 dgst_size, const u32 dgst_shifts, char *digests_buf_ptr, const u32 dgst_pos0, const u32 dgst_pos1, const u32 dgst_pos2, const u32 dgst_pos3, const u32 bitmap_mask, const u32 bitmap_size, u32 *bitmap_a, u32 *bitmap_b, u32 *bitmap_c, u32 *bitmap_d, const u64 collisions_max)
+static void selftest_to_bitmap (const u32 dgst_shifts, char *digests_buf_ptr, const u32 dgst_pos0, const u32 dgst_pos1, const u32 dgst_pos2, const u32 dgst_pos3, const u32 bitmap_mask, u32 *bitmap_a, u32 *bitmap_b, u32 *bitmap_c, u32 *bitmap_d)
+{
+  u32 *digest_ptr = (u32 *) digests_buf_ptr;
+
+  const u32 val0 = 1U << (digest_ptr[dgst_pos0] & 0x1f);
+  const u32 val1 = 1U << (digest_ptr[dgst_pos1] & 0x1f);
+  const u32 val2 = 1U << (digest_ptr[dgst_pos2] & 0x1f);
+  const u32 val3 = 1U << (digest_ptr[dgst_pos3] & 0x1f);
+
+  const u32 idx0 = (digest_ptr[dgst_pos0] >> dgst_shifts) & bitmap_mask;
+  const u32 idx1 = (digest_ptr[dgst_pos1] >> dgst_shifts) & bitmap_mask;
+  const u32 idx2 = (digest_ptr[dgst_pos2] >> dgst_shifts) & bitmap_mask;
+  const u32 idx3 = (digest_ptr[dgst_pos3] >> dgst_shifts) & bitmap_mask;
+
+  bitmap_a[idx0] |= val0;
+  bitmap_b[idx1] |= val1;
+  bitmap_c[idx2] |= val2;
+  bitmap_d[idx3] |= val3;
+}
+
+static bool generate_bitmaps (const u32 digests_cnt, const u32 dgst_size, const u32 dgst_shifts, char *digests_buf_ptr, const u32 dgst_pos0, const u32 dgst_pos1, const u32 dgst_pos2, const u32 dgst_pos3, const u32 bitmap_mask, const u32 bitmap_size, u32 *bitmap_a, u32 *bitmap_b, u32 *bitmap_c, u32 *bitmap_d, const u64 collisions_max)
 {
   u64 collisions = 0;
 
@@ -23,10 +44,10 @@ static u32 generate_bitmaps (const u32 digests_cnt, const u32 dgst_size, const u
 
     digests_buf_ptr += dgst_size;
 
-    const u32 val0 = 1u << (digest_ptr[dgst_pos0] & 0x1f);
-    const u32 val1 = 1u << (digest_ptr[dgst_pos1] & 0x1f);
-    const u32 val2 = 1u << (digest_ptr[dgst_pos2] & 0x1f);
-    const u32 val3 = 1u << (digest_ptr[dgst_pos3] & 0x1f);
+    const u32 val0 = 1U << (digest_ptr[dgst_pos0] & 0x1f);
+    const u32 val1 = 1U << (digest_ptr[dgst_pos1] & 0x1f);
+    const u32 val2 = 1U << (digest_ptr[dgst_pos2] & 0x1f);
+    const u32 val3 = 1U << (digest_ptr[dgst_pos3] & 0x1f);
 
     const u32 idx0 = (digest_ptr[dgst_pos0] >> dgst_shifts) & bitmap_mask;
     const u32 idx1 = (digest_ptr[dgst_pos1] >> dgst_shifts) & bitmap_mask;
@@ -43,10 +64,10 @@ static u32 generate_bitmaps (const u32 digests_cnt, const u32 dgst_size, const u
     bitmap_c[idx2] |= val2;
     bitmap_d[idx3] |= val3;
 
-    if (collisions >= collisions_max) return 0x7fffffff;
+    if (collisions >= collisions_max) return true;
   }
 
-  return collisions;
+  return false;
 }
 
 int bitmap_ctx_init (hashcat_ctx_t *hashcat_ctx)
@@ -58,12 +79,13 @@ int bitmap_ctx_init (hashcat_ctx_t *hashcat_ctx)
 
   bitmap_ctx->enabled = false;
 
-  if (user_options->keyspace    == true) return 0;
-  if (user_options->left        == true) return 0;
-  if (user_options->opencl_info == true) return 0;
-  if (user_options->show        == true) return 0;
-  if (user_options->usage       == true) return 0;
-  if (user_options->version     == true) return 0;
+  if (user_options->example_hashes == true) return 0;
+  if (user_options->keyspace       == true) return 0;
+  if (user_options->left           == true) return 0;
+  if (user_options->backend_info   == true) return 0;
+  if (user_options->show           == true) return 0;
+  if (user_options->usage          == true) return 0;
+  if (user_options->version        == true) return 0;
 
   bitmap_ctx->enabled = true;
 
@@ -77,14 +99,14 @@ int bitmap_ctx_init (hashcat_ctx_t *hashcat_ctx)
   const u32 bitmap_min = user_options->bitmap_min;
   const u32 bitmap_max = user_options->bitmap_max;
 
-  u32 *bitmap_s1_a = (u32 *) hcmalloc ((1u << bitmap_max) * sizeof (u32));
-  u32 *bitmap_s1_b = (u32 *) hcmalloc ((1u << bitmap_max) * sizeof (u32));
-  u32 *bitmap_s1_c = (u32 *) hcmalloc ((1u << bitmap_max) * sizeof (u32));
-  u32 *bitmap_s1_d = (u32 *) hcmalloc ((1u << bitmap_max) * sizeof (u32));
-  u32 *bitmap_s2_a = (u32 *) hcmalloc ((1u << bitmap_max) * sizeof (u32));
-  u32 *bitmap_s2_b = (u32 *) hcmalloc ((1u << bitmap_max) * sizeof (u32));
-  u32 *bitmap_s2_c = (u32 *) hcmalloc ((1u << bitmap_max) * sizeof (u32));
-  u32 *bitmap_s2_d = (u32 *) hcmalloc ((1u << bitmap_max) * sizeof (u32));
+  u32 *bitmap_s1_a = (u32 *) hcmalloc ((1U << bitmap_max) * sizeof (u32));
+  u32 *bitmap_s1_b = (u32 *) hcmalloc ((1U << bitmap_max) * sizeof (u32));
+  u32 *bitmap_s1_c = (u32 *) hcmalloc ((1U << bitmap_max) * sizeof (u32));
+  u32 *bitmap_s1_d = (u32 *) hcmalloc ((1U << bitmap_max) * sizeof (u32));
+  u32 *bitmap_s2_a = (u32 *) hcmalloc ((1U << bitmap_max) * sizeof (u32));
+  u32 *bitmap_s2_b = (u32 *) hcmalloc ((1U << bitmap_max) * sizeof (u32));
+  u32 *bitmap_s2_c = (u32 *) hcmalloc ((1U << bitmap_max) * sizeof (u32));
+  u32 *bitmap_s2_d = (u32 *) hcmalloc ((1U << bitmap_max) * sizeof (u32));
 
   u32 bitmap_bits;
   u32 bitmap_nums;
@@ -93,7 +115,7 @@ int bitmap_ctx_init (hashcat_ctx_t *hashcat_ctx)
 
   for (bitmap_bits = bitmap_min; bitmap_bits < bitmap_max; bitmap_bits++)
   {
-    bitmap_nums = 1u << bitmap_bits;
+    bitmap_nums = 1U << bitmap_bits;
 
     bitmap_mask = bitmap_nums - 1;
 
@@ -101,20 +123,31 @@ int bitmap_ctx_init (hashcat_ctx_t *hashcat_ctx)
 
     if ((hashes->digests_cnt & bitmap_mask) == hashes->digests_cnt) break;
 
-    if (generate_bitmaps (hashes->digests_cnt, hashconfig->dgst_size, bitmap_shift1, (char *) hashes->digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_size, bitmap_s1_a, bitmap_s1_b, bitmap_s1_c, bitmap_s1_d, hashes->digests_cnt / 2) == 0x7fffffff) continue;
-    if (generate_bitmaps (hashes->digests_cnt, hashconfig->dgst_size, bitmap_shift2, (char *) hashes->digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_size, bitmap_s1_a, bitmap_s1_b, bitmap_s1_c, bitmap_s1_d, hashes->digests_cnt / 2) == 0x7fffffff) continue;
+    if (generate_bitmaps (hashes->digests_cnt, hashconfig->dgst_size, bitmap_shift1, (char *) hashes->digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_size, bitmap_s1_a, bitmap_s1_b, bitmap_s1_c, bitmap_s1_d, hashes->digests_cnt / 2) == true) continue;
+    if (generate_bitmaps (hashes->digests_cnt, hashconfig->dgst_size, bitmap_shift2, (char *) hashes->digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_size, bitmap_s1_a, bitmap_s1_b, bitmap_s1_c, bitmap_s1_d, hashes->digests_cnt / 2) == true) continue;
 
     break;
   }
 
-  bitmap_nums = 1u << bitmap_bits;
+  if (bitmap_bits == bitmap_max)
+  {
+    EVENT_DATA (EVENT_BITMAP_FINAL_OVERFLOW, NULL, 0);
+  }
+
+  bitmap_nums = 1U << bitmap_bits;
 
   bitmap_mask = bitmap_nums - 1;
 
   bitmap_size = bitmap_nums * sizeof (u32);
 
-  generate_bitmaps (hashes->digests_cnt, hashconfig->dgst_size, bitmap_shift1, (char *) hashes->digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_size, bitmap_s1_a, bitmap_s1_b, bitmap_s1_c, bitmap_s1_d, -1ul);
-  generate_bitmaps (hashes->digests_cnt, hashconfig->dgst_size, bitmap_shift2, (char *) hashes->digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_size, bitmap_s2_a, bitmap_s2_b, bitmap_s2_c, bitmap_s2_d, -1ul);
+  generate_bitmaps (hashes->digests_cnt, hashconfig->dgst_size, bitmap_shift1, (char *) hashes->digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_size, bitmap_s1_a, bitmap_s1_b, bitmap_s1_c, bitmap_s1_d, -1);
+  generate_bitmaps (hashes->digests_cnt, hashconfig->dgst_size, bitmap_shift2, (char *) hashes->digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_size, bitmap_s2_a, bitmap_s2_b, bitmap_s2_c, bitmap_s2_d, -1);
+
+  if (hashconfig->st_hash != NULL)
+  {
+    selftest_to_bitmap (bitmap_shift1, (char *) hashes->st_digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_s1_a, bitmap_s1_b, bitmap_s1_c, bitmap_s1_d);
+    selftest_to_bitmap (bitmap_shift2, (char *) hashes->st_digests_buf, hashconfig->dgst_pos0, hashconfig->dgst_pos1, hashconfig->dgst_pos2, hashconfig->dgst_pos3, bitmap_mask, bitmap_s2_a, bitmap_s2_b, bitmap_s2_c, bitmap_s2_d);
+  }
 
   bitmap_ctx->bitmap_bits   = bitmap_bits;
   bitmap_ctx->bitmap_nums   = bitmap_nums;

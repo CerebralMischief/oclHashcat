@@ -5,7 +5,13 @@
 
 SHARED                  := 0
 DEBUG                   := 0
-PRODUCTION              := 1
+PRODUCTION              := 0
+PRODUCTION_VERSION      := v5.1.0
+ENABLE_BRAIN            := 1
+USE_SYSTEM_LZMA         := 0
+USE_SYSTEM_ZLIB         := 0
+USE_SYSTEM_OPENCL       := 0
+USE_SYSTEM_XXHASH       := 0
 
 ##
 ## Detect Operating System
@@ -33,30 +39,109 @@ endif
 ## Makefile flags
 ##
 
-MAKEFLAGS               += -l -j -rR --no-print-directory
+MAKEFLAGS               += -l -j 8 -rR --no-print-directory
 
 ifneq ($(findstring clean,$(MAKECMDGOALS)),)
 MAKEFLAGS               += -j 1
 endif
 
 ##
-## Installation paths (Linux only)
+## Do not modify
+##
+
+MODULE_INTERFACE_VERSION := 520
+
+##
+## Native compiler paths
+##
+
+CC                      := gcc
+AR                      := ar
+FIND                    := find
+INSTALL                 := install
+RM                      := rm
+SED                     := sed
+SED_IN_PLACE            := -i
+
+ifeq ($(UNAME),Darwin)
+CC                      := clang
+# the sed -i option of macOS requires a parameter for the backup file (we just use "")
+AR                      := /usr/bin/ar
+SED                     := /usr/bin/sed
+SED_IN_PLACE            := -i ""
+PROD_VERS               := $(shell sw_vers -productVersion | cut -d. -f2)
+endif
+
+ifeq ($(UNAME),FreeBSD)
+CC                      := cc
+SED                     := gsed
+endif
+
+##
+## Version
+##
+
+ifeq ($(PRODUCTION),1)
+VERSION_TAG             := $(PRODUCTION_VERSION)
+else
+VERSION_TAG             := $(shell git describe --tags --dirty=+ || echo $(PRODUCTION_VERSION))
+endif # PRODUCTION
+
+VERSION_PURE            := $(shell echo "$(VERSION_TAG)" | $(SED) 's/.*v\([\.0-9]*\).*/\1/')
+
+##
+## Installation paths
 ##
 
 DESTDIR                 ?=
 PREFIX                  ?= /usr/local
 
 INSTALL_FOLDER          ?= $(PREFIX)/bin
+SHARED_ROOT_FOLDER      ?= $(PREFIX)/share
+SHARED_FOLDER           ?= $(SHARED_ROOT_FOLDER)/hashcat
+DOCUMENT_FOLDER         ?= $(SHARED_ROOT_FOLDER)/doc/hashcat
 LIBRARY_FOLDER          ?= $(PREFIX)/lib
-SHARED_FOLDER           ?= $(PREFIX)/share/hashcat
-DOCUMENT_FOLDER         ?= $(PREFIX)/share/doc/hashcat
+LIBRARY_DEV_ROOT_FOLDER ?= $(PREFIX)/include
+LIBRARY_DEV_FOLDER      ?= $(LIBRARY_DEV_ROOT_FOLDER)/hashcat
+
+##
+## Depencies paths
+##
+
+ifeq ($(USE_SYSTEM_LZMA),0)
+DEPS_LZMA_PATH          := deps/LZMA-SDK/C
+else
+DEPS_LZMA_PATH          := $(LIBRARY_DEV_ROOT_FOLDER)/
+endif
+
+ifeq ($(USE_SYSTEM_ZLIB),0)
+DEPS_ZLIB_PATH          := deps/zlib/
+else
+DEPS_ZLIB_PATH          := $(LIBRARY_DEV_ROOT_FOLDER)/
+endif
+
+ifeq ($(USE_SYSTEM_OPENCL),0)
+DEPS_OPENCL_PATH        := deps/OpenCL-Headers
+else
+DEPS_OPENCL_PATH        := $(LIBRARY_DEV_ROOT_FOLDER)/
+endif
+
+ifeq ($(USE_SYSTEM_XXHASH),0)
+DEPS_XXHASH_PATH        := deps/xxHash
+else
+DEPS_XXHASH_PATH        := $(LIBRARY_DEV_ROOT_FOLDER)/
+endif
 
 ##
 ## Filenames for library and frontend
 ##
 
 HASHCAT_FRONTEND        := hashcat
-HASHCAT_LIBRARY         := libhashcat.so
+HASHCAT_LIBRARY         := libhashcat.so.$(VERSION_PURE)
+
+ifeq ($(UNAME),Darwin)
+HASHCAT_LIBRARY         := libhashcat.$(VERSION_PURE).dylib
+endif # Darwin
 
 ifeq ($(UNAME),CYGWIN)
 HASHCAT_FRONTEND        := hashcat.exe
@@ -69,109 +154,83 @@ HASHCAT_LIBRARY         := hashcat.dll
 endif # MSYS2
 
 ##
-## Dependencies
-## You may ignore them if you're compiling only a native binary and
-## You have your own headers somewhere, for example: apt-get install opencl-headers
-##
-
-OPENCL_HEADERS_KHRONOS  := deps/OpenCL-Headers
-
-##
-## Native compiler paths
-##
-
-CC                      := gcc
-FIND                    := find
-INSTALL                 := install
-RM                      := rm
-SED                     := sed
-SED_IN_PLACE            := -i
-
-ifeq ($(UNAME),Darwin)
-CC                      := clang
-# the sed -i option of OSX requires a parameter for the backup file (we just use "")
-SED_IN_PLACE            := -i ""
-endif
-
-ifeq ($(UNAME),FreeBSD)
-CC                      := cc
-SED                     := gsed
-endif
-
-##
-## Cross compiler paths
-##
-
-CC_LINUX_32             := gcc
-CC_LINUX_64             := gcc
-
-CC_WIN_32               := i686-w64-mingw32-gcc
-CC_WIN_64               := x86_64-w64-mingw32-gcc
-
-##
 ## Misc stuff
 ##
 
 COMPTIME                := $(shell date +%s)
 
-VERSION_EXPORT          := $Format:%D$
-VERSION_TAG             := $(shell test -d .git && git describe --tags --dirty=+ || echo "$(VERSION_EXPORT)"|cut -d, -f2|$(SED) -r 's|.* (\w+/)?([^ ]+)|\2|')
-
 ##
 ## General compiler and linker options
 ##
 
-CFLAGS                  += -pipe -std=c99 -Iinclude/ -Iinclude/lzma_sdk/ -IOpenCL/
+LFLAGS                  := $(LDFLAGS)
 
 ifeq ($(PRODUCTION),0)
 CFLAGS                  += -W
 CFLAGS                  += -Wall
 CFLAGS                  += -Wextra
-CFLAGS                  += -Wfloat-equal
-CFLAGS                  += -Wundef
-CFLAGS                  += -Wshadow
-CFLAGS                  += -Wmissing-declarations
-CFLAGS                  += -Wmissing-prototypes
-CFLAGS                  += -Wpointer-arith
-CFLAGS                  += -Wstrict-prototypes
-CFLAGS                  += -Waggregate-return
-CFLAGS                  += -Wswitch-enum
-CFLAGS                  += -Wunreachable-code
-CFLAGS                  += -Winit-self
-CFLAGS                  += -Werror-implicit-function-declaration
-CFLAGS                  += -Wformat
-CFLAGS                  += -ftrapv
-
-# the following compiler options produce warnings that should be fixed at some time
-
-#CFLAGS                  += -Wsizeof-pointer-memaccess
-#CFLAGS                  += -Wcast-align
-#CFLAGS                  += -Wcast-qual
-#CFLAGS                  += -Wsign-conversion
-#CFLAGS                  += -Wwrite-strings
-#CFLAGS                  += -pedantic
 endif
 
-# default linux and freebsd thread stack size is 2MB
-# default windows thread stack size is 1MB
-# default OSX thread stack size is 512kB
-# unfortionally, this option isn't supported by older GCC and clang versions
+## because LZMA SDK
+ifeq ($(CC),clang)
+CFLAGS                  += -Wno-enum-conversion
+endif
 
-#CFLAGS                  += -Wstack-usage=524288
-
-LFLAGS                  := $(LDFLAGS)
+## because ZLIB
+ifeq ($(USE_SYSTEM_ZLIB),0)
+CFLAGS_ZLIB             += -Wno-implicit-fallthrough
+CFLAGS_ZLIB             += -Wno-implicit-function-declaration
+CFLAGS_ZLIB             += -Wno-unused-parameter
+CFLAGS_ZLIB             += -DIOAPI_NO_64
+endif
 
 ifeq ($(DEBUG),0)
 CFLAGS                  += -O2
+ifneq ($(UNAME),Darwin)
 LFLAGS                  += -s
+endif
 else
 ifeq ($(DEBUG),1)
-CFLAGS                  += -DDEBUG -g -ggdb
+ifneq ($(UNAME),Darwin)
+CFLAGS                  += -DDEBUG -Og -ggdb
+else
+CFLAGS                  += -DDEBUG -O0 -ggdb
+endif
 else
 ifeq ($(DEBUG),2)
-CFLAGS                  += -DDEBUG -g -ggdb
+ifneq ($(UNAME),Darwin)
+CFLAGS                  += -DDEBUG -Og -ggdb
+else
+CFLAGS                  += -DDEBUG -O0 -ggdb
+endif
 CFLAGS                  += -fsanitize=address -fno-omit-frame-pointer
 endif
+endif
+endif
+
+CFLAGS                  += -pipe -std=gnu99 -Iinclude/ -IOpenCL/
+
+# LZMA
+CFLAGS                  += -I$(DEPS_LZMA_PATH)
+ifeq ($(USE_SYSTEM_LZMA),1)
+LFLAGS                  += -llzmasdk
+endif
+
+# ZLIB
+CFLAGS                  += -I$(DEPS_ZLIB_PATH)
+ifeq ($(USE_SYSTEM_ZLIB),1)
+LFLAGS                  += -lz
+endif
+
+# OpenCL
+CFLAGS                  += -I$(DEPS_OPENCL_PATH)
+
+# brain and xxHash
+ifeq ($(ENABLE_BRAIN),1)
+CFLAGS                  += -DWITH_BRAIN
+CFLAGS                  += -I$(DEPS_XXHASH_PATH)
+ifeq ($(USE_SYSTEM_XXHASH),1)
+LFLAGS                  += -lxxhash
 endif
 endif
 
@@ -181,179 +240,229 @@ endif
 
 ifeq ($(UNAME),Linux)
 CFLAGS_NATIVE           := $(CFLAGS)
-CFLAGS_NATIVE           += -I$(OPENCL_HEADERS_KHRONOS)/
 CFLAGS_NATIVE           += -DWITH_HWMON
 LFLAGS_NATIVE           := $(LFLAGS)
-LFLAGS_NATIVE           += -lpthread -ldl
+LFLAGS_NATIVE           += -lpthread
+LFLAGS_NATIVE           += -ldl
+LFLAGS_NATIVE           += -lrt
+LFLAGS_NATIVE           += -lm
 endif # Linux
 
 ifeq ($(UNAME),FreeBSD)
 ifndef PORTNAME
 CFLAGS_NATIVE           := $(CFLAGS)
-CFLAGS_NATIVE           += -I$(OPENCL_HEADERS_KHRONOS)/
 LFLAGS_NATIVE           := $(LFLAGS)
 LFLAGS_NATIVE           += -lpthread
+LFLAGS_NATIVE           += -lm
 endif
 endif # FreeBSD
 
 ifeq ($(UNAME),Darwin)
 export MACOSX_DEPLOYMENT_TARGET=10.9
 CFLAGS_NATIVE           := $(CFLAGS)
+
+ifeq ($(shell test $(PROD_VERS) -le 11; echo $$?), 0)
+CFLAGS_NATIVE           += -DMISSING_CLOCK_GETTIME
+endif
+
 LFLAGS_NATIVE           := $(LFLAGS)
 LFLAGS_NATIVE           += -framework OpenCL
 LFLAGS_NATIVE           += -lpthread
+LFLAGS_NATIVE           += -liconv
 endif # Darwin
 
 ifeq ($(UNAME),CYGWIN)
 CFLAGS_NATIVE           := $(CFLAGS)
-CFLAGS_NATIVE           += -I$(OPENCL_HEADERS_KHRONOS)/
 CFLAGS_NATIVE           += -DWITH_HWMON
 LFLAGS_NATIVE           := $(LFLAGS)
-LFLAGS_NATIVE           += -Wl,--dynamicbase -Wl,--nxcompat
+LFLAGS_NATIVE           += -Wl,--dynamicbase
+LFLAGS_NATIVE           += -Wl,--nxcompat
 LFLAGS_NATIVE           += -lpsapi
+LFLAGS_NATIVE           += -liconv
 endif # CYGWIN
 
 ifeq ($(UNAME),MSYS2)
 CFLAGS_NATIVE           := $(CFLAGS)
-CFLAGS_NATIVE           += -I$(OPENCL_HEADERS_KHRONOS)/
 CFLAGS_NATIVE           += -DWITH_HWMON
 LFLAGS_NATIVE           := $(LFLAGS)
-LFLAGS_NATIVE           += -Wl,--dynamicbase -Wl,--nxcompat
+LFLAGS_NATIVE           += -Wl,--dynamicbase
+LFLAGS_NATIVE           += -Wl,--nxcompat
 LFLAGS_NATIVE           += -lpsapi
+LFLAGS_NATIVE           += -liconv
+LFLAGS_NATIVE           += -lws2_32
 endif # MSYS2
-
-##
-## Cross compilation targets
-##
-
-CFLAGS_CROSS_LINUX32    := $(CFLAGS)
-CFLAGS_CROSS_LINUX32    += -I$(OPENCL_HEADERS_KHRONOS)/
-CFLAGS_CROSS_LINUX32    += -m32
-CFLAGS_CROSS_LINUX32    += -DWITH_HWMON
-CFLAGS_CROSS_LINUX64    := $(CFLAGS)
-CFLAGS_CROSS_LINUX64    += -I$(OPENCL_HEADERS_KHRONOS)/
-CFLAGS_CROSS_LINUX64    += -m64
-CFLAGS_CROSS_LINUX64    += -DWITH_HWMON
-CFLAGS_CROSS_WIN32      := $(CFLAGS)
-CFLAGS_CROSS_WIN32      += -I$(OPENCL_HEADERS_KHRONOS)/
-CFLAGS_CROSS_WIN32      += -m32
-CFLAGS_CROSS_WIN32      += -DWITH_HWMON
-CFLAGS_CROSS_WIN64      := $(CFLAGS)
-CFLAGS_CROSS_WIN64      += -I$(OPENCL_HEADERS_KHRONOS)/
-CFLAGS_CROSS_WIN64      += -m64
-CFLAGS_CROSS_WIN64      += -DWITH_HWMON
-
-LFLAGS_CROSS_LINUX32    := $(LFLAGS)
-LFLAGS_CROSS_LINUX32    += -lpthread -ldl
-LFLAGS_CROSS_LINUX64    := $(LFLAGS)
-LFLAGS_CROSS_LINUX64    += -lpthread -ldl
-LFLAGS_CROSS_WIN32      := $(LFLAGS)
-LFLAGS_CROSS_WIN32      += -Wl,--dynamicbase -Wl,--nxcompat
-LFLAGS_CROSS_WIN32      += -lpsapi
-LFLAGS_CROSS_WIN64      := $(LFLAGS)
-LFLAGS_CROSS_WIN64      += -Wl,--dynamicbase -Wl,--nxcompat
-LFLAGS_CROSS_WIN64      += -lpsapi
 
 ##
 ## Objects
 ##
 
-OBJS_ALL                := affinity autotune benchmark bitmap bitops combinator common convert cpt cpu_aes cpu_crc32 cpu_des cpu_md4 cpu_md5 cpu_sha1 cpu_sha256 debugfile dictstat dispatch dynloader event ext_ADL ext_nvapi ext_nvml ext_OpenCL ext_sysfs ext_xnvctrl ext_lzma lzma_sdk/Alloc lzma_sdk/Lzma2Dec lzma_sdk/LzmaDec filehandling folder hashcat hashes hlfmt hwmon induct interface locking logfile loopback memory monitor mpsp opencl outfile_check outfile pidfile potfile restore rp rp_cpu rp_kernel_on_cpu shared status stdout straight terminal thread timer tuningdb usage user_options weak_hash wordlist
+EMU_OBJS_ALL            := emu_general emu_inc_common emu_inc_platform emu_inc_scalar emu_inc_simd
+EMU_OBJS_ALL            += emu_inc_rp emu_inc_rp_optimized
+EMU_OBJS_ALL            += emu_inc_truecrypt_crc32 emu_inc_truecrypt_keyfile emu_inc_truecrypt_xts emu_inc_veracrypt_xts
+EMU_OBJS_ALL            += emu_inc_hash_md4 emu_inc_hash_md5 emu_inc_hash_ripemd160 emu_inc_hash_sha1 emu_inc_hash_sha256 emu_inc_hash_sha384 emu_inc_hash_sha512 emu_inc_hash_streebog256 emu_inc_hash_streebog512
+EMU_OBJS_ALL            += emu_inc_cipher_aes emu_inc_cipher_camellia emu_inc_cipher_des emu_inc_cipher_kuznyechik emu_inc_cipher_serpent emu_inc_cipher_twofish
 
-NATIVE_STATIC_OBJS      := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).NATIVE.STATIC.o)
-NATIVE_SHARED_OBJS      := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).NATIVE.SHARED.o)
+OBJS_ALL                := affinity autotune backend benchmark bitmap bitops combinator common convert cpt cpu_crc32 debugfile dictstat dispatch dynloader event ext_ADL ext_cuda ext_nvapi ext_nvml ext_nvrtc ext_OpenCL ext_sysfs ext_lzma filehandling folder hashcat hashes hlfmt hwmon induct interface keyboard_layout locking logfile loopback memory monitor mpsp outfile_check outfile pidfile potfile restore rp rp_cpu selftest slow_candidates shared status stdout straight terminal thread timer tuningdb usage user_options wordlist $(EMU_OBJS_ALL)
 
-LINUX_32_OBJS           := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).LINUX.32.o)
-LINUX_64_OBJS           := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).LINUX.64.o)
+ifeq ($(ENABLE_BRAIN),1)
+OBJS_ALL                += brain
+endif
 
-WIN_32_OBJS             := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).WIN.32.o)
-WIN_64_OBJS             := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).WIN.64.o)
+NATIVE_OBJS             := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).NATIVE.o)
+LINUX_OBJS              := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).LINUX.o)
+WIN_OBJS                := $(foreach OBJ,$(OBJS_ALL),obj/$(OBJ).WIN.o)
+
+ifeq ($(USE_SYSTEM_LZMA),0)
+OBJS_LZMA               := Alloc Lzma2Dec LzmaDec
+
+NATIVE_OBJS             += $(foreach OBJ,$(OBJS_LZMA),obj/$(OBJ).NATIVE.o)
+LINUX_OBJS              += $(foreach OBJ,$(OBJS_LZMA),obj/$(OBJ).LINUX.o)
+WIN_OBJS                += $(foreach OBJ,$(OBJS_LZMA),obj/$(OBJ).WIN.o)
+endif
+
+ifeq ($(USE_SYSTEM_ZLIB),0)
+OBJS_ZLIB               := adler32 crc32 deflate inflate inffast inftrees trees gzread gzwrite gzclose zutil gzlib contrib/minizip/unzip contrib/minizip/ioapi
+
+NATIVE_OBJS             += $(foreach OBJ,$(OBJS_ZLIB),obj/$(OBJ).NATIVE.o)
+LINUX_OBJS              += $(foreach OBJ,$(OBJS_ZLIB),obj/$(OBJ).LINUX.o)
+WIN_OBJS                += $(foreach OBJ,$(OBJS_ZLIB),obj/$(OBJ).WIN.o)
+endif
+
+ifeq ($(USE_SYSTEM_XXHASH),0)
+ifeq ($(ENABLE_BRAIN),1)
+OBJS_XXHASH             := xxhash
+
+NATIVE_OBJS             += $(foreach OBJ,$(OBJS_XXHASH),obj/$(OBJ).NATIVE.o)
+LINUX_OBJS              += $(foreach OBJ,$(OBJS_XXHASH),obj/$(OBJ).LINUX.o)
+WIN_OBJS                += $(foreach OBJ,$(OBJS_XXHASH),obj/$(OBJ).WIN.o)
+endif
+endif
 
 ##
 ## Targets: Native Compilation
 ##
 
-default: $(HASHCAT_FRONTEND)
+default: $(HASHCAT_FRONTEND) modules
 
 clean:
-	$(RM) -f obj/*.o obj/lzma_sdk/*.o *.bin *.exe *.so *.dll *.restore *.out *.pid *.log hashcat core
+	$(RM) -f $(HASHCAT_FRONTEND)
+	$(RM) -f $(HASHCAT_LIBRARY)
+	$(RM) -rf modules/*.dSYM
+	$(RM) -f modules/*.dll
+	$(RM) -f modules/*.so
+	$(RM) -f obj/*/*/*.o
+	$(RM) -f obj/*.o
+	$(RM) -f obj/*.a
+	$(RM) -f *.bin *.exe
+	$(RM) -f *.pid
+	$(RM) -f *.restore
+	$(RM) -f *.log
+	$(RM) -f core
 	$(RM) -rf *.induct
 	$(RM) -rf *.outfiles
 	$(RM) -rf *.dSYM
 	$(RM) -rf kernels
 
-##
-## Targets: Cross Compilation (for binary release version)
-##
-
-binaries: linux32 linux64 win32 win64
-
-linux32: hashcat32.bin
-linux64: hashcat64.bin
-
-win32: hashcat32.exe
-win64: hashcat64.exe
+distclean: clean
+	$(RM) -f *.restore *.pot *.out *.log
 
 ##
 ## Targets: Linux install
-## How to make /usr/bin/install doing recursive??
 ##
 
-ifeq ($(SHARED),1)
-install: install_docs install_shared install_library install_hashcat
-else
-install: install_docs install_shared                 install_hashcat
+# allow (whitelist) "make install" only on unix-based systems (also disallow cygwin/msys)
+
+ifneq ($(findstring install,$(MAKECMDGOALS)),)
+  ifeq (,$(filter $(UNAME),Linux FreeBSD Darwin))
+    define ERROR_INSTALL_DISALLOWED
+! The 'install' target is not allowed on this operating system ($(UNAME)). \
+Only Linux, FreeBSD and Darwin can use the 'install' target
+    endef
+
+    $(error $(ERROR_INSTALL_DISALLOWED))
+  endif
 endif
 
-install_docs:
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(DOCUMENT_FOLDER)
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(DOCUMENT_FOLDER)/docs
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(DOCUMENT_FOLDER)/charsets
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(DOCUMENT_FOLDER)/masks
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(DOCUMENT_FOLDER)/rules
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(DOCUMENT_FOLDER)/extra
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(DOCUMENT_FOLDER)/extra/tab_completion
-	$(INSTALL) -m 644 example.dict                          $(DESTDIR)$(DOCUMENT_FOLDER)/
-	$(INSTALL) -m 644 example0.hash                         $(DESTDIR)$(DOCUMENT_FOLDER)/
-	$(INSTALL) -m 644 example400.hash                       $(DESTDIR)$(DOCUMENT_FOLDER)/
-	$(INSTALL) -m 644 example500.hash                       $(DESTDIR)$(DOCUMENT_FOLDER)/
-	$(INSTALL) -m 755 example0.sh                           $(DESTDIR)$(DOCUMENT_FOLDER)/
-	$(INSTALL) -m 755 example400.sh                         $(DESTDIR)$(DOCUMENT_FOLDER)/
-	$(INSTALL) -m 755 example500.sh                         $(DESTDIR)$(DOCUMENT_FOLDER)/
-	$(INSTALL) -m 644 extra/tab_completion/hashcat.sh       $(DESTDIR)$(DOCUMENT_FOLDER)/extra/tab_completion/
-	$(INSTALL) -m 644 extra/tab_completion/howto.txt        $(DESTDIR)$(DOCUMENT_FOLDER)/extra/tab_completion/
-	$(INSTALL) -m 755 extra/tab_completion/install          $(DESTDIR)$(DOCUMENT_FOLDER)/extra/tab_completion/
-	$(FIND) docs/     -type d -exec $(INSTALL) -m 755 -d    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
-	$(FIND) docs/     -type f -exec $(INSTALL) -m 644 {}    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
-	$(FIND) charsets/ -type d -exec $(INSTALL) -m 755 -d    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
-	$(FIND) charsets/ -type f -exec $(INSTALL) -m 644 {}    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
-	$(FIND) masks/    -type d -exec $(INSTALL) -m 755 -d    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
-	$(FIND) masks/    -type f -exec $(INSTALL) -m 644 {}    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
-	$(FIND) rules/    -type d -exec $(INSTALL) -m 755 -d    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
-	$(FIND) rules/    -type f -exec $(INSTALL) -m 644 {}    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
-	$(SED) $(SED_IN_PLACE) 's/\.\/hashcat/hashcat/'         $(DESTDIR)$(DOCUMENT_FOLDER)/example0.sh
-	$(SED) $(SED_IN_PLACE) 's/\.\/hashcat/hashcat/'         $(DESTDIR)$(DOCUMENT_FOLDER)/example400.sh
-	$(SED) $(SED_IN_PLACE) 's/\.\/hashcat/hashcat/'         $(DESTDIR)$(DOCUMENT_FOLDER)/example500.sh
+ifeq ($(SHARED),1)
+install: install_docs install_shared install_library install_library_dev install_kernels install_modules install_hashcat
+else
+install: install_docs install_shared                                     install_kernels install_modules install_hashcat
+endif
 
-install_shared:
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(SHARED_FOLDER)
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(SHARED_FOLDER)/OpenCL
-	$(INSTALL) -m 644 hashcat.hcstat                        $(DESTDIR)$(SHARED_FOLDER)/
-	$(INSTALL) -m 644 hashcat.hctune                        $(DESTDIR)$(SHARED_FOLDER)/
-	$(FIND) OpenCL/   -type d -exec $(INSTALL) -m 755 -d    $(DESTDIR)$(SHARED_FOLDER)/{}   \;
-	$(FIND) OpenCL/   -type f -exec $(INSTALL) -m 644 {}    $(DESTDIR)$(SHARED_FOLDER)/{}   \;
+# we need this extra target to make sure that for parallel builds (i.e. 2+ Makefile targets could possible run at the same time)
+# the root folder of the shared directory is created first (and is a dependency for the targets that depend on it)
+
+install_make_library_dev_root:
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(LIBRARY_DEV_ROOT_FOLDER)
+
+install_make_shared_root:
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(SHARED_ROOT_FOLDER)
+
+install_docs: install_make_shared_root
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/charsets
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/docs
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/layouts
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/masks
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/rules
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/extra
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(DOCUMENT_FOLDER)/extra/tab_completion
+	$(INSTALL) -m 644 example.dict                                          $(DESTDIR)$(DOCUMENT_FOLDER)/
+	$(INSTALL) -m 644 example0.hash                                         $(DESTDIR)$(DOCUMENT_FOLDER)/
+	$(INSTALL) -m 644 example400.hash                                       $(DESTDIR)$(DOCUMENT_FOLDER)/
+	$(INSTALL) -m 644 example500.hash                                       $(DESTDIR)$(DOCUMENT_FOLDER)/
+	$(INSTALL) -m 755 example0.sh                                           $(DESTDIR)$(DOCUMENT_FOLDER)/
+	$(INSTALL) -m 755 example400.sh                                         $(DESTDIR)$(DOCUMENT_FOLDER)/
+	$(INSTALL) -m 755 example500.sh                                         $(DESTDIR)$(DOCUMENT_FOLDER)/
+	$(INSTALL) -m 644 extra/tab_completion/hashcat.sh                       $(DESTDIR)$(DOCUMENT_FOLDER)/extra/tab_completion/
+	$(INSTALL) -m 644 extra/tab_completion/howto.txt                        $(DESTDIR)$(DOCUMENT_FOLDER)/extra/tab_completion/
+	$(INSTALL) -m 755 extra/tab_completion/install                          $(DESTDIR)$(DOCUMENT_FOLDER)/extra/tab_completion/
+	$(FIND) charsets/ -type d -exec $(INSTALL) -m 755 -d                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(FIND) charsets/ -type f -exec $(INSTALL) -m 644 {}                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(FIND) docs/     -type d -exec $(INSTALL) -m 755 -d                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(FIND) docs/     -type f -exec $(INSTALL) -m 644 {}                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(FIND) layouts/  -type d -exec $(INSTALL) -m 755 -d                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(FIND) layouts/  -type f -exec $(INSTALL) -m 644 {}                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(FIND) masks/    -type d -exec $(INSTALL) -m 755 -d                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(FIND) masks/    -type f -exec $(INSTALL) -m 644 {}                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(FIND) rules/    -type d -exec $(INSTALL) -m 755 -d                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(FIND) rules/    -type f -exec $(INSTALL) -m 644 {}                    $(DESTDIR)$(DOCUMENT_FOLDER)/{} \;
+	$(SED) $(SED_IN_PLACE) 's/\.\/hashcat/hashcat/'                         $(DESTDIR)$(DOCUMENT_FOLDER)/example0.sh
+	$(SED) $(SED_IN_PLACE) 's/\.\/hashcat/hashcat/'                         $(DESTDIR)$(DOCUMENT_FOLDER)/example400.sh
+	$(SED) $(SED_IN_PLACE) 's/\.\/hashcat/hashcat/'                         $(DESTDIR)$(DOCUMENT_FOLDER)/example500.sh
+
+install_shared: install_make_shared_root
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(SHARED_FOLDER)
+	$(INSTALL) -m 644 hashcat.hctune                                        $(DESTDIR)$(SHARED_FOLDER)/
+	$(INSTALL) -m 644 hashcat.hcstat2                                       $(DESTDIR)$(SHARED_FOLDER)/
+
+install_kernels: install_shared
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(SHARED_FOLDER)/OpenCL
+	$(FIND) OpenCL/   -mindepth 1 -type d -execdir $(INSTALL) -m 755 -d     $(DESTDIR)$(SHARED_FOLDER)/OpenCL/{} \;
+	$(FIND) OpenCL/   -mindepth 1 -type f -execdir $(INSTALL) -m 644 {}     $(DESTDIR)$(SHARED_FOLDER)/OpenCL/{} \;
+
+install_modules: install_shared modules
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(SHARED_FOLDER)/modules
+	$(FIND) modules/  -mindepth 1 -type d -execdir $(INSTALL) -m 755 -d     $(DESTDIR)$(SHARED_FOLDER)/modules/{} \;
+	$(FIND) modules/  -mindepth 1 -type f -execdir $(INSTALL) -m 644 {}     $(DESTDIR)$(SHARED_FOLDER)/modules/{} \;
 
 install_library: $(HASHCAT_LIBRARY)
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(LIBRARY_FOLDER)
-	$(INSTALL) -m 755 $(HASHCAT_LIBRARY)                    $(DESTDIR)$(LIBRARY_FOLDER)/
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(LIBRARY_FOLDER)
+	$(INSTALL) -m 755 $(HASHCAT_LIBRARY)                                    $(DESTDIR)$(LIBRARY_FOLDER)/
+
+install_library_dev: install_make_library_dev_root
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(LIBRARY_DEV_FOLDER)
+	$(FIND) include/  -mindepth 1 -type d -execdir $(INSTALL) -m 755 -d     $(DESTDIR)$(LIBRARY_DEV_FOLDER)/{} \;
+	$(FIND) include/  -mindepth 1 -type f -execdir $(INSTALL) -m 644 {}     $(DESTDIR)$(LIBRARY_DEV_FOLDER)/{} \;
 
 install_hashcat: $(HASHCAT_FRONTEND)
-	$(INSTALL) -m 755 -d                                    $(DESTDIR)$(INSTALL_FOLDER)
-	$(INSTALL) -m 755 $(HASHCAT_FRONTEND)                   $(DESTDIR)$(INSTALL_FOLDER)/
+	$(INSTALL) -m 755 -d                                                    $(DESTDIR)$(INSTALL_FOLDER)
+	$(INSTALL) -m 755 $(HASHCAT_FRONTEND)                                   $(DESTDIR)$(INSTALL_FOLDER)/
 
 uninstall:
 	$(RM) -f  $(DESTDIR)$(INSTALL_FOLDER)/$(HASHCAT_FRONTEND)
 	$(RM) -f  $(DESTDIR)$(LIBRARY_FOLDER)/$(HASHCAT_LIBRARY)
+	$(RM) -rf $(DESTDIR)$(LIBRARY_DEV_FOLDER)
 	$(RM) -rf $(DESTDIR)$(SHARED_FOLDER)
 	$(RM) -rf $(DESTDIR)$(DOCUMENT_FOLDER)
 
@@ -361,53 +470,194 @@ uninstall:
 ## native compiled hashcat library and frontend
 ##
 
-obj/%.NATIVE.STATIC.o: src/%.c
-	$(CC) -c $(CFLAGS_NATIVE) $< -o $@
-
-obj/%.NATIVE.SHARED.o: src/%.c
+obj/%.NATIVE.o: src/%.c
 	$(CC) -c $(CFLAGS_NATIVE) $< -o $@ -fpic
 
-$(HASHCAT_LIBRARY): $(NATIVE_SHARED_OBJS)
-	$(CC)                                $^            $(LFLAGS_NATIVE) -o $@ -shared
+ifeq ($(USE_SYSTEM_LZMA),0)
+obj/%.NATIVE.o: $(DEPS_LZMA_PATH)/%.c
+	$(CC) -c $(CFLAGS_NATIVE) $< -o $@ -fpic
+endif
+
+ifeq ($(USE_SYSTEM_ZLIB),0)
+obj/%.NATIVE.o: $(DEPS_ZLIB_PATH)/%.c
+	$(CC) -c $(CFLAGS_NATIVE) $(CFLAGS_ZLIB) $< -o $@ -fpic
+endif
+
+ifeq ($(USE_SYSTEM_XXHASH),0)
+ifeq ($(ENABLE_BRAIN),1)
+obj/%.NATIVE.o: $(DEPS_XXHASH_PATH)/%.c
+	$(CC) -c $(CFLAGS_NATIVE) $< -o $@ -fpic
+endif
+endif
+
+obj/combined.NATIVE.a: $(NATIVE_OBJS)
+	$(AR) rcs $@ $^
+
+ifeq ($(UNAME),Darwin)
+$(HASHCAT_LIBRARY): $(NATIVE_OBJS)
+	$(CC)                     $^ -o $@                    $(LFLAGS_NATIVE) -shared -install_name $(DESTDIR)$(LIBRARY_FOLDER)/$(HASHCAT_LIBRARY) -current_version $(VERSION_PURE) -compatibility_version $(VERSION_PURE)
+else
+$(HASHCAT_LIBRARY): $(NATIVE_OBJS)
+	$(CC)                     $^ -o $@                    $(LFLAGS_NATIVE) -shared -Wl,-soname,$(HASHCAT_LIBRARY)
+endif
 
 ifeq ($(SHARED),1)
 $(HASHCAT_FRONTEND): src/main.c $(HASHCAT_LIBRARY)
-	$(CC)    $(CFLAGS_NATIVE) $^ -L. -lhashcat $(LFLAGS_NATIVE) -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -DINSTALL_FOLDER=\"$(INSTALL_FOLDER)\" -DSHARED_FOLDER=\"$(SHARED_FOLDER)\" -DDOCUMENT_FOLDER=\"$(DOCUMENT_FOLDER)\" -o $@
+	$(CC)    $(CFLAGS_NATIVE) $^ -o $@ $(HASHCAT_LIBRARY) $(LFLAGS_NATIVE) -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -DINSTALL_FOLDER=\"$(INSTALL_FOLDER)\" -DSHARED_FOLDER=\"$(SHARED_FOLDER)\" -DDOCUMENT_FOLDER=\"$(DOCUMENT_FOLDER)\"
 else
-$(HASHCAT_FRONTEND): src/main.c $(NATIVE_STATIC_OBJS)
-	$(CC)    $(CFLAGS_NATIVE) $^               $(LFLAGS_NATIVE) -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -DINSTALL_FOLDER=\"$(INSTALL_FOLDER)\" -DSHARED_FOLDER=\"$(SHARED_FOLDER)\" -DDOCUMENT_FOLDER=\"$(DOCUMENT_FOLDER)\" -o $@
+$(HASHCAT_FRONTEND): src/main.c obj/combined.NATIVE.a
+	$(CC)    $(CFLAGS_NATIVE) $^ -o $@                    $(LFLAGS_NATIVE) -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -DINSTALL_FOLDER=\"$(INSTALL_FOLDER)\" -DSHARED_FOLDER=\"$(SHARED_FOLDER)\" -DDOCUMENT_FOLDER=\"$(DOCUMENT_FOLDER)\"
 endif
+
+##
+## native compiled modules
+##
+
+MODULE_SUFFIX := so
+
+ifeq ($(UNAME),CYGWIN)
+MODULE_SUFFIX := dll
+endif
+
+ifeq ($(UNAME),MSYS2)
+MODULE_SUFFIX := dll
+endif
+
+MODULES_SRC   := $(wildcard src/modules/*.c)
+MODULES_LIB   := $(patsubst src/modules/module_%.c, modules/module_%.$(MODULE_SUFFIX), $(MODULES_SRC))
+
+ifeq ($(SHARED),1)
+modules/module_%.$(MODULE_SUFFIX): src/modules/module_%.c $(HASHCAT_LIBRARY)
+	$(CC)    $(CFLAGS_NATIVE) $^ -o $@ $(LFLAGS_NATIVE) -shared -fPIC -D MODULE_INTERFACE_VERSION_CURRENT=$(MODULE_INTERFACE_VERSION)
+else
+modules/module_%.$(MODULE_SUFFIX): src/modules/module_%.c obj/combined.NATIVE.a
+	$(CC)    $(CFLAGS_NATIVE) $^ -o $@ $(LFLAGS_NATIVE) -shared -fPIC -D MODULE_INTERFACE_VERSION_CURRENT=$(MODULE_INTERFACE_VERSION)
+endif
+
+modules: $(MODULES_LIB)
+
+##
+## Cross Compilation (binary release version)
+##
+
+ifeq ($(UNAME),Linux)
+
+##
+## Compiler paths
+##
+
+CC_LINUX                := gcc
+CC_WIN                  := x86_64-w64-mingw32-gcc
+
+AR_LINUX                := ar
+AR_WIN                  := x86_64-w64-mingw32-ar
+
+## To compile win-iconv with mingw clone from here: https://github.com/win-iconv/win-iconv
+##
+## Then patch the makefile with the patches from tools/win-iconv-64.diff and run make install
+##
+
+WIN_ICONV               := /opt/win-iconv-64
+
+##
+## Compiler options
+##
+
+CFLAGS_CROSS_LINUX      := $(CFLAGS)
+CFLAGS_CROSS_LINUX      += -fPIC
+CFLAGS_CROSS_LINUX      += -DWITH_HWMON
+CFLAGS_CROSS_WIN        := $(CFLAGS)
+CFLAGS_CROSS_WIN        += -fPIC
+CFLAGS_CROSS_WIN        += -I$(WIN_ICONV)/include/
+CFLAGS_CROSS_WIN        += -DWITH_HWMON
+
+LFLAGS_CROSS_LINUX      := $(LFLAGS)
+LFLAGS_CROSS_LINUX      += -lpthread
+LFLAGS_CROSS_LINUX      += -ldl
+LFLAGS_CROSS_LINUX      += -lm
+LFLAGS_CROSS_WIN        := $(LFLAGS)
+LFLAGS_CROSS_WIN        += -Wl,--dynamicbase
+LFLAGS_CROSS_WIN        += -Wl,--nxcompat
+LFLAGS_CROSS_WIN        += -lpsapi
+LFLAGS_CROSS_WIN        += -lws2_32
+
+##
+## Targets
+##
+
+binaries: linux win
+
+host_linux: hashcat.bin
+host_win:   hashcat.exe
+
+linux: host_linux modules_linux
+win:   host_win   modules_win
+
+##
+## cross compiled modules
+##
+
+MODULES_LIB_LINUX   := $(patsubst src/modules/module_%.c, modules/module_%.so,  $(MODULES_SRC))
+MODULES_LIB_WIN     := $(patsubst src/modules/module_%.c, modules/module_%.dll, $(MODULES_SRC))
+
+modules_linux: $(MODULES_LIB_LINUX)
+modules_win:   $(MODULES_LIB_WIN)
+
+modules/module_%.so:  src/modules/module_%.c obj/combined.LINUX.a
+	$(CC_LINUX)  $(CFLAGS_CROSS_LINUX) $^ -o $@ $(LFLAGS_CROSS_LINUX) -shared -fPIC -D MODULE_INTERFACE_VERSION_CURRENT=$(MODULE_INTERFACE_VERSION)
+
+modules/module_%.dll: src/modules/module_%.c obj/combined.WIN.a
+	$(CC_WIN)    $(CFLAGS_CROSS_WIN)   $^ -o $@ $(LFLAGS_CROSS_WIN)   -shared -fPIC -D MODULE_INTERFACE_VERSION_CURRENT=$(MODULE_INTERFACE_VERSION)
 
 ##
 ## cross compiled hashcat
 ##
 
-obj/%.LINUX.32.o: src/%.c
-	$(CC_LINUX_32) $(CFLAGS_CROSS_LINUX32) -c -o $@ $<
+obj/%.LINUX.o: src/%.c
+	$(CC_LINUX) $(CFLAGS_CROSS_LINUX) -c -o $@ $<
 
-obj/%.LINUX.64.o: src/%.c
-	$(CC_LINUX_64) $(CFLAGS_CROSS_LINUX64) -c -o $@ $<
+obj/%.WIN.o:   src/%.c
+	$(CC_WIN)   $(CFLAGS_CROSS_WIN)   -c -o $@ $<
 
-obj/%.WIN.32.o:   src/%.c
-	$(CC_WIN_32)   $(CFLAGS_CROSS_WIN32)   -c -o $@ $<
+ifeq ($(USE_SYSTEM_LZMA),0)
+obj/%.LINUX.o: $(DEPS_LZMA_PATH)/%.c
+	$(CC_LINUX) $(CFLAGS_CROSS_LINUX) -c -o $@ $<
 
-obj/%.WIN.64.o:   src/%.c
-	$(CC_WIN_64)   $(CFLAGS_CROSS_WIN64)   -c -o $@ $<
+obj/%.WIN.o:   $(DEPS_LZMA_PATH)/%.c
+	$(CC_WIN)   $(CFLAGS_CROSS_WIN)   -c -o $@ $<
+endif
 
-hashcat32.bin: src/main.c $(LINUX_32_OBJS)
-	$(CC_LINUX_32) $(CFLAGS_CROSS_LINUX32)    -o $@ $^ $(LFLAGS_CROSS_LINUX32) -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -DINSTALL_FOLDER=\"$(INSTALL_FOLDER)\" -DSHARED_FOLDER=\"$(SHARED_FOLDER)\" -DDOCUMENT_FOLDER=\"$(DOCUMENT_FOLDER)\"
+ifeq ($(USE_SYSTEM_ZLIB),0)
+obj/%.LINUX.o: $(DEPS_ZLIB_PATH)/%.c
+	$(CC_LINUX) $(CFLAGS_CROSS_LINUX) $(CFLAGS_ZLIB) -c -o $@ $<
 
-hashcat64.bin: src/main.c $(LINUX_64_OBJS)
-	$(CC_LINUX_64) $(CFLAGS_CROSS_LINUX64)    -o $@ $^ $(LFLAGS_CROSS_LINUX64) -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -DINSTALL_FOLDER=\"$(INSTALL_FOLDER)\" -DSHARED_FOLDER=\"$(SHARED_FOLDER)\" -DDOCUMENT_FOLDER=\"$(DOCUMENT_FOLDER)\"
+obj/%.WIN.o:   $(DEPS_ZLIB_PATH)/%.c
+	$(CC_WIN)   $(CFLAGS_CROSS_WIN) $(CFLAGS_ZLIB) -c -o $@ $<
+endif
 
-hashcat32.exe: src/main.c $(WIN_32_OBJS)
-	$(CC_WIN_32)   $(CFLAGS_CROSS_WIN32)      -o $@ $^ $(LFLAGS_CROSS_WIN32)   -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\"
+ifeq ($(USE_SYSTEM_XXHASH),0)
+ifeq ($(ENABLE_BRAIN),1)
+obj/%.LINUX.o: $(DEPS_XXHASH_PATH)/%.c
+	$(CC_LINUX) $(CFLAGS_CROSS_LINUX) -c -o $@ $<
 
-hashcat64.exe: src/main.c $(WIN_64_OBJS)
-	$(CC_WIN_64)   $(CFLAGS_CROSS_WIN64)      -o $@ $^ $(LFLAGS_CROSS_WIN64)   -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\"
+obj/%.WIN.o:   $(DEPS_XXHASH_PATH)/%.c
+	$(CC_WIN)   $(CFLAGS_CROSS_WIN)   -c -o $@ $<
+endif
+endif
 
-hashcat32.dll: src/main.c $(WIN_32_OBJS)
-	$(CC_WIN_32)   $(CFLAGS_CROSS_WIN32)      -o $@ $^ $(LFLAGS_CROSS_WIN32)   -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -shared
+obj/combined.LINUX.a: $(LINUX_OBJS)
+	$(AR_LINUX) rcs $@ $^
 
-hashcat64.dll: src/main.c $(WIN_64_OBJS)
-	$(CC_WIN_64)   $(CFLAGS_CROSS_WIN64)      -o $@ $^ $(LFLAGS_CROSS_WIN64)   -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -shared
+obj/combined.WIN.a: $(WIN_OBJS)
+	$(AR_WIN) rcs $@ $^
+
+hashcat.bin: src/main.c obj/combined.LINUX.a
+	$(CC_LINUX) $(CFLAGS_CROSS_LINUX)    -o $@ $^ $(LFLAGS_CROSS_LINUX) -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -DINSTALL_FOLDER=\"$(INSTALL_FOLDER)\" -DSHARED_FOLDER=\"$(SHARED_FOLDER)\" -DDOCUMENT_FOLDER=\"$(DOCUMENT_FOLDER)\"
+
+hashcat.exe: src/main.c obj/combined.WIN.a $(WIN_ICONV)/lib/libiconv.a
+	$(CC_WIN)   $(CFLAGS_CROSS_WIN)      -o $@ $^ $(LFLAGS_CROSS_WIN)   -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\"
+
+hashcat.dll: src/main.c obj/combined.WIN.a $(WIN_ICONV)/lib/libiconv.a
+	$(CC_WIN)   $(CFLAGS_CROSS_WIN)      -o $@ $^ $(LFLAGS_CROSS_WIN)   -DCOMPTIME=$(COMPTIME) -DVERSION_TAG=\"$(VERSION_TAG)\" -shared
+
+endif

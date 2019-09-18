@@ -4,346 +4,152 @@
  */
 
 #include "common.h"
+#include "types.h"
+#include "memory.h"
+#include "shared.h"
+#include "interface.h"
 #include "usage.h"
 
-static const char *USAGE_MINI[] =
+static const char *const USAGE_MINI[] =
 {
-  "Usage: %s [options]... hash|hashfile|hccapxfile [dictionary|mask|directory]...",
+  "Usage: hashcat [options]... hash|hashfile|hccapxfile [dictionary|mask|directory]...",
   "",
   "Try --help for more help.",
   NULL
 };
 
-static const char *USAGE_BIG[] =
+static const char *const USAGE_BIG_PRE_HASHMODES[] =
 {
-  "%s, advanced password recovery",
-  "",
-  "Usage: %s [options]... hash|hashfile|hccapxfile [dictionary|mask|directory]...",
+  "Usage: hashcat [options]... hash|hashfile|hccapxfile [dictionary|mask|directory]...",
   "",
   "- [ Options ] -",
   "",
-  " Options Short / Long          | Type | Description                                          | Example",
-  "===============================+======+======================================================+=======================",
-  " -m, --hash-type               | Num  | Hash-type, see references below                      | -m 1000",
-  " -a, --attack-mode             | Num  | Attack-mode, see references below                    | -a 3",
-  " -V, --version                 |      | Print version                                        |",
-  " -h, --help                    |      | Print help                                           |",
-  "     --quiet                   |      | Suppress output                                      |",
-  "     --hex-charset             |      | Assume charset is given in hex                       |",
-  "     --hex-salt                |      | Assume salt is given in hex                          |",
-  "     --hex-wordlist            |      | Assume words in wordlist is given in hex             |",
-  "     --force                   |      | Ignore warnings                                      |",
-  "     --status                  |      | Enable automatic update of the status-screen         |",
-  "     --status-timer            | Num  | Sets seconds between status-screen update to X       | --status-timer=1",
-  "     --machine-readable        |      | Display the status view in a machine readable format |",
-  "     --keep-guessing           |      | Keep guessing the hash after it has been cracked     |",
-  "     --loopback                |      | Add new plains to induct directory                   |",
-  "     --weak-hash-threshold     | Num  | Threshold X when to stop checking for weak hashes    | --weak=0",
-  "     --markov-hcstat           | File | Specify hcstat file to use                           | --markov-hc=my.hcstat",
-  "     --markov-disable          |      | Disables markov-chains, emulates classic brute-force |",
-  "     --markov-classic          |      | Enables classic markov-chains, no per-position       |",
-  " -t, --markov-threshold        | Num  | Threshold X when to stop accepting new markov-chains | -t 50",
-  "     --runtime                 | Num  | Abort session after X seconds of runtime             | --runtime=10",
-  "     --session                 | Str  | Define specific session name                         | --session=mysession",
-  "     --restore                 |      | Restore session from --session                       |",
-  "     --restore-disable         |      | Do not write restore file                            |",
-  "     --restore-file-path       | File | Specific path to restore file                        | --restore-file-path=my.restore",
-  " -o, --outfile                 | File | Define outfile for recovered hash                    | -o outfile.txt",
-  "     --outfile-format          | Num  | Define outfile-format X for recovered hash           | --outfile-format=7",
-  "     --outfile-autohex-disable |      | Disable the use of $HEX[] in output plains           |",
-  "     --outfile-check-timer     | Num  | Sets seconds between outfile checks to X             | --outfile-check=30",
-  " -p, --separator               | Char | Separator char for hashlists and outfile             | -p :",
-  "     --stdout                  |      | Do not crack a hash, instead print candidates only   |",
-  "     --show                    |      | Compare hashlist with potfile; Show cracked hashes   |",
-  "     --left                    |      | Compare hashlist with potfile; Show uncracked hashes |",
-  "     --username                |      | Enable ignoring of usernames in hashfile             |",
-  "     --remove                  |      | Enable remove of hash once it is cracked             |",
-  "     --remove-timer            | Num  | Update input hash file each X seconds                | --remove-timer=30",
-  "     --potfile-disable         |      | Do not write potfile                                 |",
-  "     --potfile-path            | Dir  | Specific path to potfile                             | --potfile-path=my.pot",
-  "     --debug-mode              | Num  | Defines the debug mode (hybrid only by using rules)  | --debug-mode=4",
-  "     --debug-file              | File | Output file for debugging rules                      | --debug-file=good.log",
-  "     --induction-dir           | Dir  | Specify the induction directory to use for loopback  | --induction=inducts",
-  "     --outfile-check-dir       | Dir  | Specify the outfile directory to monitor for plains  | --outfile-check-dir=x",
-  "     --logfile-disable         |      | Disable the logfile                                  |",
-  "     --hccapx-message-pair     | Num  | Load only message pairs from hccapx matching X       | --hccapx-message-pair=2",
-  "     --truecrypt-keyfiles      | File | Keyfiles used, separate with comma                   | --truecrypt-key=x.png",
-  "     --veracrypt-keyfiles      | File | Keyfiles used, separate with comma                   | --veracrypt-key=x.txt",
-  "     --veracrypt-pim           | Num  | VeraCrypt personal iterations multiplier             | --veracrypt-pim=1000",
-  " -b, --benchmark               |      | Run benchmark                                        |",
-  "     --speed-only              |      | Return expected speed of the attack and quit         |",
-  "     --progress-only           |      | Return ideal progress step size and time to process  |",
-  " -c, --segment-size            | Num  | Sets size in MB to cache from the wordfile to X      | -c 32",
-  "     --bitmap-min              | Num  | Sets minimum bits allowed for bitmaps to X           | --bitmap-min=24",
-  "     --bitmap-max              | Num  | Sets maximum bits allowed for bitmaps to X           | --bitmap-max=24",
-  "     --cpu-affinity            | Str  | Locks to CPU devices, separate with comma            | --cpu-affinity=1,2,3",
-  " -I, --opencl-info             |      | Show info about OpenCL platforms/devices detected    | -I",
-  "     --opencl-platforms        | Str  | OpenCL platforms to use, separate with comma         | --opencl-platforms=2",
-  " -d, --opencl-devices          | Str  | OpenCL devices to use, separate with comma           | -d 1",
-  " -D, --opencl-device-types     | Str  | OpenCL device-types to use, separate with comma      | -D 1",
-  "     --opencl-vector-width     | Num  | Manual override OpenCL vector-width to X             | --opencl-vector=4",
-  " -w, --workload-profile        | Num  | Enable a specific workload profile, see pool below   | -w 3",
-  " -n, --kernel-accel            | Num  | Manual workload tuning, set outerloop step size to X | -n 64",
-  " -u, --kernel-loops            | Num  | Manual workload tuning, set innerloop step size to X | -u 256",
-  "     --nvidia-spin-damp        | Num  | Workaround NVidias CPU burning loop bug, in percent  | --nvidia-spin-damp=50",
-  "     --gpu-temp-disable        |      | Disable temperature and fanspeed reads and triggers  |",
-  "     --gpu-temp-abort          | Num  | Abort if GPU temperature reaches X degrees celsius   | --gpu-temp-abort=100",
-  "     --gpu-temp-retain         | Num  | Try to retain GPU temperature at X degrees celsius   | --gpu-temp-retain=95",
-  "     --powertune-enable        |      | Enable power tuning, restores settings when finished |",
-  "     --scrypt-tmto             | Num  | Manually override TMTO value for scrypt to X         | --scrypt-tmto=3",
-  " -s, --skip                    | Num  | Skip X words from the start                          | -s 1000000",
-  " -l, --limit                   | Num  | Limit X words from the start + skipped words         | -l 1000000",
-  "     --keyspace                |      | Show keyspace base:mod values and quit               |",
-  " -j, --rule-left               | Rule | Single rule applied to each word from left wordlist  | -j 'c'",
-  " -k, --rule-right              | Rule | Single rule applied to each word from right wordlist | -k '^-'",
-  " -r, --rules-file              | File | Multiple rules applied to each word from wordlists   | -r rules/best64.rule",
-  " -g, --generate-rules          | Num  | Generate X random rules                              | -g 10000",
-  "     --generate-rules-func-min | Num  | Force min X funcs per rule                           |",
-  "     --generate-rules-func-max | Num  | Force max X funcs per rule                           |",
-  "     --generate-rules-seed     | Num  | Force RNG seed set to X                              |",
-  " -1, --custom-charset1         | CS   | User-defined charset ?1                              | -1 ?l?d?u",
-  " -2, --custom-charset2         | CS   | User-defined charset ?2                              | -2 ?l?d?s",
-  " -3, --custom-charset3         | CS   | User-defined charset ?3                              |",
-  " -4, --custom-charset4         | CS   | User-defined charset ?4                              |",
-  " -i, --increment               |      | Enable mask increment mode                           |",
-  "     --increment-min           | Num  | Start mask incrementing at X                         | --increment-min=4",
-  "     --increment-max           | Num  | Stop mask incrementing at X                          | --increment-max=8",
+  " Options Short / Long           | Type | Description                                          | Example",
+  "================================+======+======================================================+=======================",
+  " -m, --hash-type                | Num  | Hash-type, see references below                      | -m 1000",
+  " -a, --attack-mode              | Num  | Attack-mode, see references below                    | -a 3",
+  " -V, --version                  |      | Print version                                        |",
+  " -h, --help                     |      | Print help                                           |",
+  "     --quiet                    |      | Suppress output                                      |",
+  "     --hex-charset              |      | Assume charset is given in hex                       |",
+  "     --hex-salt                 |      | Assume salt is given in hex                          |",
+  "     --hex-wordlist             |      | Assume words in wordlist are given in hex            |",
+  "     --force                    |      | Ignore warnings                                      |",
+  "     --status                   |      | Enable automatic update of the status screen         |",
+  "     --status-json              |      | Enable JSON format for status ouput                  |",
+  "     --status-timer             | Num  | Sets seconds between status screen updates to X      | --status-timer=1",
+  "     --stdin-timeout-abort      | Num  | Abort if there is no input from stdin for X seconds  | --stdin-timeout-abort=300",
+  "     --machine-readable         |      | Display the status view in a machine-readable format |",
+  "     --keep-guessing            |      | Keep guessing the hash after it has been cracked     |",
+  "     --self-test-disable        |      | Disable self-test functionality on startup           |",
+  "     --loopback                 |      | Add new plains to induct directory                   |",
+  "     --markov-hcstat2           | File | Specify hcstat2 file to use                          | --markov-hcstat2=my.hcstat2",
+  "     --markov-disable           |      | Disables markov-chains, emulates classic brute-force |",
+  "     --markov-classic           |      | Enables classic markov-chains, no per-position       |",
+  " -t, --markov-threshold         | Num  | Threshold X when to stop accepting new markov-chains | -t 50",
+  "     --runtime                  | Num  | Abort session after X seconds of runtime             | --runtime=10",
+  "     --session                  | Str  | Define specific session name                         | --session=mysession",
+  "     --restore                  |      | Restore session from --session                       |",
+  "     --restore-disable          |      | Do not write restore file                            |",
+  "     --restore-file-path        | File | Specific path to restore file                        | --restore-file-path=x.restore",
+  " -o, --outfile                  | File | Define outfile for recovered hash                    | -o outfile.txt",
+  "     --outfile-format           | Num  | Define outfile-format X for recovered hash           | --outfile-format=7",
+  "     --outfile-autohex-disable  |      | Disable the use of $HEX[] in output plains           |",
+  "     --outfile-check-timer      | Num  | Sets seconds between outfile checks to X             | --outfile-check=30",
+  "     --wordlist-autohex-disable |      | Disable the conversion of $HEX[] from the wordlist   |",
+  " -p, --separator                | Char | Separator char for hashlists and outfile             | -p :",
+  "     --stdout                   |      | Do not crack a hash, instead print candidates only   |",
+  "     --show                     |      | Compare hashlist with potfile; show cracked hashes   |",
+  "     --left                     |      | Compare hashlist with potfile; show uncracked hashes |",
+  "     --username                 |      | Enable ignoring of usernames in hashfile             |",
+  "     --remove                   |      | Enable removal of hashes once they are cracked       |",
+  "     --remove-timer             | Num  | Update input hash file each X seconds                | --remove-timer=30",
+  "     --potfile-disable          |      | Do not write potfile                                 |",
+  "     --potfile-path             | File | Specific path to potfile                             | --potfile-path=my.pot",
+  "     --encoding-from            | Code | Force internal wordlist encoding from X              | --encoding-from=iso-8859-15",
+  "     --encoding-to              | Code | Force internal wordlist encoding to X                | --encoding-to=utf-32le",
+  "     --debug-mode               | Num  | Defines the debug mode (hybrid only by using rules)  | --debug-mode=4",
+  "     --debug-file               | File | Output file for debugging rules                      | --debug-file=good.log",
+  "     --induction-dir            | Dir  | Specify the induction directory to use for loopback  | --induction=inducts",
+  "     --outfile-check-dir        | Dir  | Specify the outfile directory to monitor for plains  | --outfile-check-dir=x",
+  "     --logfile-disable          |      | Disable the logfile                                  |",
+  "     --hccapx-message-pair      | Num  | Load only message pairs from hccapx matching X       | --hccapx-message-pair=2",
+  "     --nonce-error-corrections  | Num  | The BF size range to replace AP's nonce last bytes   | --nonce-error-corrections=16",
+  "     --keyboard-layout-mapping  | File | Keyboard layout mapping table for special hash-modes | --keyb=german.hckmap",
+  "     --truecrypt-keyfiles       | File | Keyfiles to use, separated with commas               | --truecrypt-keyf=x.png",
+  "     --veracrypt-keyfiles       | File | Keyfiles to use, separated with commas               | --veracrypt-keyf=x.txt",
+  "     --veracrypt-pim-start      | Num  | VeraCrypt personal iterations multiplier start       | --veracrypt-pim-start=450",
+  "     --veracrypt-pim-stop       | Num  | VeraCrypt personal iterations multiplier stop        | --veracrypt-pim-stop=500",
+  " -b, --benchmark                |      | Run benchmark of selected hash-modes                 |",
+  "     --benchmark-all            |      | Run benchmark of all hash-modes (requires -b)        |",
+  "     --speed-only               |      | Return expected speed of the attack, then quit       |",
+  "     --progress-only            |      | Return ideal progress step size and time to process  |",
+  " -c, --segment-size             | Num  | Sets size in MB to cache from the wordfile to X      | -c 32",
+  "     --bitmap-min               | Num  | Sets minimum bits allowed for bitmaps to X           | --bitmap-min=24",
+  "     --bitmap-max               | Num  | Sets maximum bits allowed for bitmaps to X           | --bitmap-max=24",
+  "     --cpu-affinity             | Str  | Locks to CPU devices, separated with commas          | --cpu-affinity=1,2,3",
+  "     --example-hashes           |      | Show an example hash for each hash-mode              |",
+  " -I, --backend-info             |      | Show info about detected backend API devices         | -I",
+  " -d, --backend-devices          | Str  | Backend devices to use, separated with commas        | -d 1",
+  " -D, --opencl-device-types      | Str  | OpenCL device-types to use, separated with commas    | -D 1",
+  " -O, --optimized-kernel-enable  |      | Enable optimized kernels (limits password length)    |",
+  " -w, --workload-profile         | Num  | Enable a specific workload profile, see pool below   | -w 3",
+  " -n, --kernel-accel             | Num  | Manual workload tuning, set outerloop step size to X | -n 64",
+  " -u, --kernel-loops             | Num  | Manual workload tuning, set innerloop step size to X | -u 256",
+  " -T, --kernel-threads           | Num  | Manual workload tuning, set thread count to X        | -T 64",
+  "     --backend-vector-width     | Num  | Manually override backend vector-width to X          | --backend-vector=4",
+  "     --spin-damp                | Num  | Use CPU for device synchronization, in percent       | --spin-damp=50",
+  "     --hwmon-disable            |      | Disable temperature and fanspeed reads and triggers  |",
+  "     --hwmon-temp-abort         | Num  | Abort if temperature reaches X degrees Celsius       | --hwmon-temp-abort=100",
+  "     --scrypt-tmto              | Num  | Manually override TMTO value for scrypt to X         | --scrypt-tmto=3",
+  " -s, --skip                     | Num  | Skip X words from the start                          | -s 1000000",
+  " -l, --limit                    | Num  | Limit X words from the start + skipped words         | -l 1000000",
+  "     --keyspace                 |      | Show keyspace base:mod values and quit               |",
+  " -j, --rule-left                | Rule | Single rule applied to each word from left wordlist  | -j 'c'",
+  " -k, --rule-right               | Rule | Single rule applied to each word from right wordlist | -k '^-'",
+  " -r, --rules-file               | File | Multiple rules applied to each word from wordlists   | -r rules/best64.rule",
+  " -g, --generate-rules           | Num  | Generate X random rules                              | -g 10000",
+  "     --generate-rules-func-min  | Num  | Force min X functions per rule                       |",
+  "     --generate-rules-func-max  | Num  | Force max X functions per rule                       |",
+  "     --generate-rules-seed      | Num  | Force RNG seed set to X                              |",
+  " -1, --custom-charset1          | CS   | User-defined charset ?1                              | -1 ?l?d?u",
+  " -2, --custom-charset2          | CS   | User-defined charset ?2                              | -2 ?l?d?s",
+  " -3, --custom-charset3          | CS   | User-defined charset ?3                              |",
+  " -4, --custom-charset4          | CS   | User-defined charset ?4                              |",
+  " -i, --increment                |      | Enable mask increment mode                           |",
+  "     --increment-min            | Num  | Start mask incrementing at X                         | --increment-min=4",
+  "     --increment-max            | Num  | Stop mask incrementing at X                          | --increment-max=8",
+  " -S, --slow-candidates          |      | Enable slower (but advanced) candidate generators    |",
+  #ifdef WITH_BRAIN
+  "     --brain-server             |      | Enable brain server                                  |",
+  " -z, --brain-client             |      | Enable brain client, activates -S                    |",
+  "     --brain-client-features    | Num  | Define brain client features, see below              | --brain-client-features=3",
+  "     --brain-host               | Str  | Brain server host (IP or domain)                     | --brain-host=127.0.0.1",
+  "     --brain-port               | Port | Brain server port                                    | --brain-port=13743",
+  "     --brain-password           | Str  | Brain server authentication password                 | --brain-password=bZfhCvGUSjRq",
+  "     --brain-session            | Hex  | Overrides automatically calculated brain session     | --brain-session=0x2ae611db",
+  "     --brain-session-whitelist  | Hex  | Allow given sessions only, separated with commas     | --brain-session-whitelist=0x2ae611db",
+  #endif
   "",
   "- [ Hash modes ] -",
   "",
   "      # | Name                                             | Category",
   "  ======+==================================================+======================================",
-  "    900 | MD4                                              | Raw Hash",
-  "      0 | MD5                                              | Raw Hash",
-  "   5100 | Half MD5                                         | Raw Hash",
-  "    100 | SHA1                                             | Raw Hash",
-  "   1300 | SHA-224                                          | Raw Hash",
-  "   1400 | SHA-256                                          | Raw Hash",
-  "  10800 | SHA-384                                          | Raw Hash",
-  "   1700 | SHA-512                                          | Raw Hash",
-  "   5000 | SHA-3(Keccak)                                    | Raw Hash",
-  "  10100 | SipHash                                          | Raw Hash",
-  "   6000 | RipeMD160                                        | Raw Hash",
-  "   6100 | Whirlpool                                        | Raw Hash",
-  "   6900 | GOST R 34.11-94                                  | Raw Hash",
-  "  11700 | GOST R 34.11-2012 (Streebog) 256-bit             | Raw Hash",
-  "  11800 | GOST R 34.11-2012 (Streebog) 512-bit             | Raw Hash",
-  "     10 | md5($pass.$salt)                                 | Raw Hash, Salted and / or Iterated",
-  "     20 | md5($salt.$pass)                                 | Raw Hash, Salted and / or Iterated",
-  "     30 | md5(unicode($pass).$salt)                        | Raw Hash, Salted and / or Iterated",
-  "     40 | md5($salt.unicode($pass))                        | Raw Hash, Salted and / or Iterated",
-  "   3800 | md5($salt.$pass.$salt)                           | Raw Hash, Salted and / or Iterated",
-  "   3710 | md5($salt.md5($pass))                            | Raw Hash, Salted and / or Iterated",
-  "   4010 | md5($salt.md5($salt.$pass))                      | Raw Hash, Salted and / or Iterated",
-  "   4110 | md5($salt.md5($pass.$salt))                      | Raw Hash, Salted and / or Iterated",
-  "   2600 | md5(md5($pass))                                  | Raw Hash, Salted and / or Iterated",
-  "   3910 | md5(md5($pass).md5($salt))                       | Raw Hash, Salted and / or Iterated",
-  "   4300 | md5(strtoupper(md5($pass)))                      | Raw Hash, Salted and / or Iterated",
-  "   4400 | md5(sha1($pass))                                 | Raw Hash, Salted and / or Iterated",
-  "    110 | sha1($pass.$salt)                                | Raw Hash, Salted and / or Iterated",
-  "    120 | sha1($salt.$pass)                                | Raw Hash, Salted and / or Iterated",
-  "    130 | sha1(unicode($pass).$salt)                       | Raw Hash, Salted and / or Iterated",
-  "    140 | sha1($salt.unicode($pass))                       | Raw Hash, Salted and / or Iterated",
-  "   4500 | sha1(sha1($pass))                                | Raw Hash, Salted and / or Iterated",
-  "   4520 | sha1($salt.sha1($pass))                          | Raw Hash, Salted and / or Iterated",
-  "   4700 | sha1(md5($pass))                                 | Raw Hash, Salted and / or Iterated",
-  "   4900 | sha1($salt.$pass.$salt)                          | Raw Hash, Salted and / or Iterated",
-  "  14400 | sha1(CX)                                         | Raw Hash, Salted and / or Iterated",
-  "   1410 | sha256($pass.$salt)                              | Raw Hash, Salted and / or Iterated",
-  "   1420 | sha256($salt.$pass)                              | Raw Hash, Salted and / or Iterated",
-  "   1430 | sha256(unicode($pass).$salt)                     | Raw Hash, Salted and / or Iterated",
-  "   1440 | sha256($salt.unicode($pass))                     | Raw Hash, Salted and / or Iterated",
-  "   1710 | sha512($pass.$salt)                              | Raw Hash, Salted and / or Iterated",
-  "   1720 | sha512($salt.$pass)                              | Raw Hash, Salted and / or Iterated",
-  "   1730 | sha512(unicode($pass).$salt)                     | Raw Hash, Salted and / or Iterated",
-  "   1740 | sha512($salt.unicode($pass))                     | Raw Hash, Salted and / or Iterated",
-  "     50 | HMAC-MD5 (key = $pass)                           | Raw Hash, Authenticated",
-  "     60 | HMAC-MD5 (key = $salt)                           | Raw Hash, Authenticated",
-  "    150 | HMAC-SHA1 (key = $pass)                          | Raw Hash, Authenticated",
-  "    160 | HMAC-SHA1 (key = $salt)                          | Raw Hash, Authenticated",
-  "   1450 | HMAC-SHA256 (key = $pass)                        | Raw Hash, Authenticated",
-  "   1460 | HMAC-SHA256 (key = $salt)                        | Raw Hash, Authenticated",
-  "   1750 | HMAC-SHA512 (key = $pass)                        | Raw Hash, Authenticated",
-  "   1760 | HMAC-SHA512 (key = $salt)                        | Raw Hash, Authenticated",
-  "  14000 | DES (PT = $salt, key = $pass)                    | Raw Cipher, Known-Plaintext attack",
-  "  14100 | 3DES (PT = $salt, key = $pass)                   | Raw Cipher, Known-Plaintext attack",
-  "  14900 | Skip32 (PT = $salt, key = $pass)                 | Raw Cipher, Known-Plaintext attack",
-  "    400 | phpass                                           | Generic KDF",
-  "   8900 | scrypt                                           | Generic KDF",
-  "  11900 | PBKDF2-HMAC-MD5                                  | Generic KDF",
-  "  12000 | PBKDF2-HMAC-SHA1                                 | Generic KDF",
-  "  10900 | PBKDF2-HMAC-SHA256                               | Generic KDF",
-  "  12100 | PBKDF2-HMAC-SHA512                               | Generic KDF",
-  "     23 | Skype                                            | Network protocols",
-  "   2500 | WPA/WPA2                                         | Network protocols",
-  "   4800 | iSCSI CHAP authentication, MD5(Chap)             | Network protocols",
-  "   5300 | IKE-PSK MD5                                      | Network protocols",
-  "   5400 | IKE-PSK SHA1                                     | Network protocols",
-  "   5500 | NetNTLMv1                                        | Network protocols",
-  "   5500 | NetNTLMv1 + ESS                                  | Network protocols",
-  "   5600 | NetNTLMv2                                        | Network protocols",
-  "   7300 | IPMI2 RAKP HMAC-SHA1                             | Network protocols",
-  "   7500 | Kerberos 5 AS-REQ Pre-Auth etype 23              | Network protocols",
-  "   8300 | DNSSEC (NSEC3)                                   | Network protocols",
-  "  10200 | Cram MD5                                         | Network protocols",
-  "  11100 | PostgreSQL CRAM (MD5)                            | Network protocols",
-  "  11200 | MySQL CRAM (SHA1)                                | Network protocols",
-  "  11400 | SIP digest authentication (MD5)                  | Network protocols",
-  "  13100 | Kerberos 5 TGS-REP etype 23                      | Network protocols",
-  "    121 | SMF (Simple Machines Forum)                      | Forums, CMS, E-Commerce, Frameworks",
-  "    400 | phpBB3                                           | Forums, CMS, E-Commerce, Frameworks",
-  "   2611 | vBulletin < v3.8.5                               | Forums, CMS, E-Commerce, Frameworks",
-  "   2711 | vBulletin > v3.8.5                               | Forums, CMS, E-Commerce, Frameworks",
-  "   2811 | MyBB                                             | Forums, CMS, E-Commerce, Frameworks",
-  "   2811 | IPB (Invison Power Board)                        | Forums, CMS, E-Commerce, Frameworks",
-  "   8400 | WBB3 (Woltlab Burning Board)                     | Forums, CMS, E-Commerce, Frameworks",
-  "     11 | Joomla < 2.5.18                                  | Forums, CMS, E-Commerce, Frameworks",
-  "    400 | Joomla > 2.5.18                                  | Forums, CMS, E-Commerce, Frameworks",
-  "    400 | Wordpress                                        | Forums, CMS, E-Commerce, Frameworks",
-  "   2612 | PHPS                                             | Forums, CMS, E-Commerce, Frameworks",
-  "   7900 | Drupal7                                          | Forums, CMS, E-Commerce, Frameworks",
-  "     21 | osCommerce                                       | Forums, CMS, E-Commerce, Frameworks",
-  "     21 | xt:Commerce                                      | Forums, CMS, E-Commerce, Frameworks",
-  "  11000 | PrestaShop                                       | Forums, CMS, E-Commerce, Frameworks",
-  "    124 | Django (SHA-1)                                   | Forums, CMS, E-Commerce, Frameworks",
-  "  10000 | Django (PBKDF2-SHA256)                           | Forums, CMS, E-Commerce, Frameworks",
-  "   3711 | Mediawiki B type                                 | Forums, CMS, E-Commerce, Frameworks",
-  "  13900 | OpenCart                                         | Forums, CMS, E-Commerce, Frameworks",
-  "   4521 | Redmine                                          | Forums, CMS, E-Commerce, Frameworks",
-  "   4522 | PunBB                                            | Forums, CMS, E-Commerce, Frameworks",
-  "     12 | PostgreSQL                                       | Database Server",
-  "    131 | MSSQL(2000)                                      | Database Server",
-  "    132 | MSSQL(2005)                                      | Database Server",
-  "   1731 | MSSQL(2012)                                      | Database Server",
-  "   1731 | MSSQL(2014)                                      | Database Server",
-  "    200 | MySQL323                                         | Database Server",
-  "    300 | MySQL4.1/MySQL5                                  | Database Server",
-  "   3100 | Oracle H: Type (Oracle 7+)                       | Database Server",
-  "    112 | Oracle S: Type (Oracle 11+)                      | Database Server",
-  "  12300 | Oracle T: Type (Oracle 12+)                      | Database Server",
-  "   8000 | Sybase ASE                                       | Database Server",
-  "    141 | EPiServer 6.x < v4                               | HTTP, SMTP, LDAP Server",
-  "   1441 | EPiServer 6.x > v4                               | HTTP, SMTP, LDAP Server",
-  "   1600 | Apache $apr1$                                    | HTTP, SMTP, LDAP Server",
-  "  12600 | ColdFusion 10+                                   | HTTP, SMTP, LDAP Server",
-  "   1421 | hMailServer                                      | HTTP, SMTP, LDAP Server",
-  "    101 | nsldap, SHA-1(Base64), Netscape LDAP SHA         | HTTP, SMTP, LDAP Server",
-  "    111 | nsldaps, SSHA-1(Base64), Netscape LDAP SSHA      | HTTP, SMTP, LDAP Server",
-  "   1411 | SSHA-256(Base64), LDAP {SSHA256}                 | HTTP, SMTP, LDAP Server",
-  "   1711 | SSHA-512(Base64), LDAP {SSHA512}                 | HTTP, SMTP, LDAP Server",
-  "  15000 | FileZilla Server >= 0.9.55                       | FTP Server",
-  "  11500 | CRC32                                            | Checksums",
-  "   3000 | LM                                               | Operating-Systems",
-  "   1000 | NTLM                                             | Operating-Systems",
-  "   1100 | Domain Cached Credentials (DCC), MS Cache        | Operating-Systems",
-  "   2100 | Domain Cached Credentials 2 (DCC2), MS Cache 2   | Operating-Systems",
-  "  12800 | MS-AzureSync PBKDF2-HMAC-SHA256                  | Operating-Systems",
-  "   1500 | descrypt, DES(Unix), Traditional DES             | Operating-Systems",
-  "  12400 | BSDiCrypt, Extended DES                          | Operating-Systems",
-  "    500 | md5crypt $1$, MD5(Unix)                          | Operating-Systems",
-  "   3200 | bcrypt $2*$, Blowfish(Unix)                      | Operating-Systems",
-  "   7400 | sha256crypt $5$, SHA256(Unix)                    | Operating-Systems",
-  "   1800 | sha512crypt $6$, SHA512(Unix)                    | Operating-Systems",
-  "    122 | OSX v10.4, OSX v10.5, OSX v10.6                  | Operating-Systems",
-  "   1722 | OSX v10.7                                        | Operating-Systems",
-  "   7100 | OSX v10.8, OSX v10.9, OSX v10.10                 | Operating-Systems",
-  "   6300 | AIX {smd5}                                       | Operating-Systems",
-  "   6700 | AIX {ssha1}                                      | Operating-Systems",
-  "   6400 | AIX {ssha256}                                    | Operating-Systems",
-  "   6500 | AIX {ssha512}                                    | Operating-Systems",
-  "   2400 | Cisco-PIX                                        | Operating-Systems",
-  "   2410 | Cisco-ASA                                        | Operating-Systems",
-  "    500 | Cisco-IOS $1$                                    | Operating-Systems",
-  "   5700 | Cisco-IOS $4$                                    | Operating-Systems",
-  "   9200 | Cisco-IOS $8$                                    | Operating-Systems",
-  "   9300 | Cisco-IOS $9$                                    | Operating-Systems",
-  "     22 | Juniper Netscreen/SSG (ScreenOS)                 | Operating-Systems",
-  "    501 | Juniper IVE                                      | Operating-Systems",
-  "   7000 | Fortigate (FortiOS)                              | Operating-Systems",
-  "   5800 | Android PIN                                      | Operating-Systems",
-  "  13800 | Windows 8+ phone PIN/Password                    | Operating-Systems",
-  "   8100 | Citrix Netscaler                                 | Operating-Systems",
-  "   8500 | RACF                                             | Operating-Systems",
-  "   7200 | GRUB 2                                           | Operating-Systems",
-  "   9900 | Radmin2                                          | Operating-Systems",
-  "    125 | ArubaOS                                          | Operating-Systems",
-  "   7700 | SAP CODVN B (BCODE)                              | Enterprise Application Software (EAS)",
-  "   7800 | SAP CODVN F/G (PASSCODE)                         | Enterprise Application Software (EAS)",
-  "  10300 | SAP CODVN H (PWDSALTEDHASH) iSSHA-1              | Enterprise Application Software (EAS)",
-  "   8600 | Lotus Notes/Domino 5                             | Enterprise Application Software (EAS)",
-  "   8700 | Lotus Notes/Domino 6                             | Enterprise Application Software (EAS)",
-  "   9100 | Lotus Notes/Domino 8                             | Enterprise Application Software (EAS)",
-  "    133 | PeopleSoft                                       | Enterprise Application Software (EAS)",
-  "  13500 | PeopleSoft Token                                 | Enterprise Application Software (EAS)",
-  "  11600 | 7-Zip                                            | Archives",
-  "  12500 | RAR3-hp                                          | Archives",
-  "  13000 | RAR5                                             | Archives",
-  "  13200 | AxCrypt                                          | Archives",
-  "  13300 | AxCrypt in memory SHA1                           | Archives",
-  "  13600 | WinZip                                           | Archives",
-  "  14700 | iTunes Backup < 10.0                             | Backup",
-  "  14800 | iTunes Backup >= 10.0                            | Backup",
-  "   62XY | TrueCrypt                                        | Full-Disk encryptions (FDE)",
-  "     X  | 1 = PBKDF2-HMAC-RipeMD160                        | Full-Disk encryptions (FDE)",
-  "     X  | 2 = PBKDF2-HMAC-SHA512                           | Full-Disk encryptions (FDE)",
-  "     X  | 3 = PBKDF2-HMAC-Whirlpool                        | Full-Disk encryptions (FDE)",
-  "     X  | 4 = PBKDF2-HMAC-RipeMD160 + boot-mode            | Full-Disk encryptions (FDE)",
-  "      Y | 1 = XTS  512 bit pure AES                        | Full-Disk encryptions (FDE)",
-  "      Y | 1 = XTS  512 bit pure Serpent                    | Full-Disk encryptions (FDE)",
-  "      Y | 1 = XTS  512 bit pure Twofish                    | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit pure AES                        | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit pure Serpent                    | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit pure Twofish                    | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit cascaded AES-Twofish            | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit cascaded Serpent-AES            | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit cascaded Twofish-Serpent        | Full-Disk encryptions (FDE)",
-  "      Y | 3 = XTS 1536 bit all                             | Full-Disk encryptions (FDE)",
-  "   8800 | Android FDE < v4.3                               | Full-Disk encryptions (FDE)",
-  "  12900 | Android FDE (Samsung DEK)                        | Full-Disk encryptions (FDE)",
-  "  12200 | eCryptfs                                         | Full-Disk encryptions (FDE)",
-  "  137XY | VeraCrypt                                        | Full-Disk encryptions (FDE)",
-  "     X  | 1 = PBKDF2-HMAC-RipeMD160                        | Full-Disk encryptions (FDE)",
-  "     X  | 2 = PBKDF2-HMAC-SHA512                           | Full-Disk encryptions (FDE)",
-  "     X  | 3 = PBKDF2-HMAC-Whirlpool                        | Full-Disk encryptions (FDE)",
-  "     X  | 4 = PBKDF2-HMAC-RipeMD160 + boot-mode            | Full-Disk encryptions (FDE)",
-  "     X  | 5 = PBKDF2-HMAC-SHA256                           | Full-Disk encryptions (FDE)",
-  "     X  | 6 = PBKDF2-HMAC-SHA256 + boot-mode               | Full-Disk encryptions (FDE)",
-  "      Y | 1 = XTS  512 bit pure AES                        | Full-Disk encryptions (FDE)",
-  "      Y | 1 = XTS  512 bit pure Serpent                    | Full-Disk encryptions (FDE)",
-  "      Y | 1 = XTS  512 bit pure Twofish                    | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit pure AES                        | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit pure Serpent                    | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit pure Twofish                    | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit cascaded AES-Twofish            | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit cascaded Serpent-AES            | Full-Disk encryptions (FDE)",
-  "      Y | 2 = XTS 1024 bit cascaded Twofish-Serpent        | Full-Disk encryptions (FDE)",
-  "      Y | 3 = XTS 1536 bit all                             | Full-Disk encryptions (FDE)",
-  "  14600 | LUKS                                             | Full-Disk encryptions (FDE)",
-  "   9700 | MS Office <= 2003 $0|$1, MD5 + RC4               | Documents",
-  "   9710 | MS Office <= 2003 $0|$1, MD5 + RC4, collider #1  | Documents",
-  "   9720 | MS Office <= 2003 $0|$1, MD5 + RC4, collider #2  | Documents",
-  "   9800 | MS Office <= 2003 $3|$4, SHA1 + RC4              | Documents",
-  "   9810 | MS Office <= 2003 $3|$4, SHA1 + RC4, collider #1 | Documents",
-  "   9820 | MS Office <= 2003 $3|$4, SHA1 + RC4, collider #2 | Documents",
-  "   9400 | MS Office 2007                                   | Documents",
-  "   9500 | MS Office 2010                                   | Documents",
-  "   9600 | MS Office 2013                                   | Documents",
-  "  10400 | PDF 1.1 - 1.3 (Acrobat 2 - 4)                    | Documents",
-  "  10410 | PDF 1.1 - 1.3 (Acrobat 2 - 4), collider #1       | Documents",
-  "  10420 | PDF 1.1 - 1.3 (Acrobat 2 - 4), collider #2       | Documents",
-  "  10500 | PDF 1.4 - 1.6 (Acrobat 5 - 8)                    | Documents",
-  "  10600 | PDF 1.7 Level 3 (Acrobat 9)                      | Documents",
-  "  10700 | PDF 1.7 Level 8 (Acrobat 10 - 11)                | Documents",
-  "   9000 | Password Safe v2                                 | Password Managers",
-  "   5200 | Password Safe v3                                 | Password Managers",
-  "   6800 | Lastpass + Lastpass sniffed                      | Password Managers",
-  "   6600 | 1Password, agilekeychain                         | Password Managers",
-  "   8200 | 1Password, cloudkeychain                         | Password Managers",
-  "  11300 | Bitcoin/Litecoin wallet.dat                      | Password Managers",
-  "  12700 | Blockchain, My Wallet                            | Password Managers",
-  "  13400 | Keepass 1 (AES/Twofish) and Keepass 2 (AES)      | Password Managers",
-  "  99999 | Plaintext                                        | Plaintext",
+  NULL
+};
+
+static const char *const USAGE_BIG_POST_HASHMODES[] =
+{
+  #ifdef WITH_BRAIN
+  "- [ Brain Client Features ] -",
   "",
+  "  # | Features",
+  " ===+========",
+  "  1 | Send hashed passwords",
+  "  2 | Send attack positions",
+  "  3 | Send hashed passwords and attack positions",
+  "",
+  #endif
   "- [ Outfile Formats ] -",
   "",
   "  # | Format",
@@ -392,7 +198,7 @@ static const char *USAGE_BIG[] =
   "  d | 0123456789",
   "  h | 0123456789abcdef",
   "  H | 0123456789ABCDEF",
-  "  s |  !\"#$%%&'()*+,-./:;<=>?@[\\]^_`{|}~",
+  "  s |  !\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~",
   "  a | ?l?u?d?s",
   "  b | 0x00 - 0xff",
   "",
@@ -418,17 +224,44 @@ static const char *USAGE_BIG[] =
   "  Attack-          | Hash- |",
   "  Mode             | Type  | Example command",
   " ==================+=======+==================================================================",
-  "  Wordlist         | $P$   | %s -a 0 -m 400 example400.hash example.dict",
-  "  Wordlist + Rules | MD5   | %s -a 0 -m 0 example0.hash example.dict -r rules/best64.rule",
-  "  Brute-Force      | MD5   | %s -a 3 -m 0 example0.hash ?a?a?a?a?a?a",
-  "  Combinator       | MD5   | %s -a 1 -m 0 example0.hash example.dict example.dict",
+  "  Wordlist         | $P$   | hashcat -a 0 -m 400 example400.hash example.dict",
+  "  Wordlist + Rules | MD5   | hashcat -a 0 -m 0 example0.hash example.dict -r rules/best64.rule",
+  "  Brute-Force      | MD5   | hashcat -a 3 -m 0 example0.hash ?a?a?a?a?a?a",
+  "  Combinator       | MD5   | hashcat -a 1 -m 0 example0.hash example.dict example.dict",
   "",
-  "If you still have no idea what just happened try following pages:",
+  "If you still have no idea what just happened, try the following pages:",
   "",
   "* https://hashcat.net/wiki/#howtos_videos_papers_articles_etc_in_the_wild",
-  "* https://hashcat.net/wiki/#frequently_asked_questions",
+  "* https://hashcat.net/faq/",
   NULL
 };
+
+typedef struct usage_sort
+{
+  u32   hash_mode;
+  char *hash_name;
+  u32   hash_category;
+
+} usage_sort_t;
+
+static int sort_by_usage (const void *p1, const void *p2)
+{
+  const usage_sort_t *u1 = (const usage_sort_t *) p1;
+  const usage_sort_t *u2 = (const usage_sort_t *) p2;
+
+  if (u1->hash_category > u2->hash_category) return  1;
+  if (u1->hash_category < u2->hash_category) return -1;
+
+  const int rc_name = strncmp (u1->hash_name + 1, u2->hash_name + 1, 15); // yes, strange...
+
+  if (rc_name > 0) return  1;
+  if (rc_name < 0) return -1;
+
+  if (u1->hash_mode > u2->hash_mode) return  1;
+  if (u1->hash_mode < u2->hash_mode) return -1;
+
+  return 0;
+}
 
 void usage_mini_print (const char *progname)
 {
@@ -440,12 +273,75 @@ void usage_mini_print (const char *progname)
   }
 }
 
-void usage_big_print (const char *progname)
+void usage_big_print (hashcat_ctx_t *hashcat_ctx)
 {
-  for (int i = 0; USAGE_BIG[i] != NULL; i++)
+  const folder_config_t *folder_config = hashcat_ctx->folder_config;
+  const hashconfig_t    *hashconfig    = hashcat_ctx->hashconfig;
+        user_options_t  *user_options  = hashcat_ctx->user_options;
+
+  char *modulefile = (char *) hcmalloc (HCBUFSIZ_TINY);
+
+  usage_sort_t *usage_sort_buf = (usage_sort_t *) hccalloc (MODULE_HASH_MODES_MAXIMUM, sizeof (usage_sort_t));
+
+  int usage_sort_cnt = 0;
+
+  for (int i = 0; i < MODULE_HASH_MODES_MAXIMUM; i++)
   {
-    printf (USAGE_BIG[i], progname);
+    user_options->hash_mode = i;
+
+    module_filename (folder_config, i, modulefile, HCBUFSIZ_TINY);
+
+    if (hc_path_exist (modulefile) == false) continue;
+
+    const int rc = hashconfig_init (hashcat_ctx);
+
+    if (rc == 0)
+    {
+      usage_sort_buf[usage_sort_cnt].hash_mode     = hashconfig->hash_mode;
+      usage_sort_buf[usage_sort_cnt].hash_name     = hcstrdup (hashconfig->hash_name);
+      usage_sort_buf[usage_sort_cnt].hash_category = hashconfig->hash_category;
+
+      usage_sort_cnt++;
+    }
+
+    hashconfig_destroy (hashcat_ctx);
+  }
+
+  hcfree (modulefile);
+
+  qsort (usage_sort_buf, usage_sort_cnt, sizeof (usage_sort_t), sort_by_usage);
+
+  for (int i = 0; USAGE_BIG_PRE_HASHMODES[i] != NULL; i++)
+  {
+    printf ("%s", USAGE_BIG_PRE_HASHMODES[i]);
 
     fwrite (EOL, strlen (EOL), 1, stdout);
   }
+
+  //hc_fwrite (EOL, strlen (EOL), 1, stdout);
+
+  for (int i = 0; i < usage_sort_cnt; i++)
+  {
+    printf ("%7u | %-48s | %s", usage_sort_buf[i].hash_mode, usage_sort_buf[i].hash_name, strhashcategory (usage_sort_buf[i].hash_category));
+
+    fwrite (EOL, strlen (EOL), 1, stdout);
+  }
+
+  fwrite (EOL, strlen (EOL), 1, stdout);
+
+  for (int i = 0; i < usage_sort_cnt; i++)
+  {
+    hcfree (usage_sort_buf[i].hash_name);
+  }
+
+  hcfree (usage_sort_buf);
+
+  for (int i = 0; USAGE_BIG_POST_HASHMODES[i] != NULL; i++)
+  {
+    printf ("%s", USAGE_BIG_POST_HASHMODES[i]);
+
+    fwrite (EOL, strlen (EOL), 1, stdout);
+  }
+
+  fwrite (EOL, strlen (EOL), 1, stdout);
 }

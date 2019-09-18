@@ -13,19 +13,22 @@
 
 static int sort_by_mtime (const void *p1, const void *p2)
 {
-  const char **f1 = (const char **) p1;
-  const char **f2 = (const char **) p2;
+  const char* const *f1 = (const char* const *) p1;
+  const char* const *f2 = (const char* const *) p2;
 
-  hc_stat_t s1;
-  hc_stat_t s2;
+  struct stat s1;
+  struct stat s2;
 
-  const int rc1 = hc_stat (*f1, &s1);
-  const int rc2 = hc_stat (*f2, &s2);
+  const int rc1 = stat (*f1, &s1);
+  const int rc2 = stat (*f2, &s2);
 
   if (rc1 < rc2) return  1;
   if (rc1 > rc2) return -1;
 
-  return s2.st_mtime - s1.st_mtime;
+  if (s1.st_mtime < s2.st_mtime) return  1;
+  if (s1.st_mtime > s2.st_mtime) return -1;
+
+  return 0;
 }
 
 int induct_ctx_init (hashcat_ctx_t *hashcat_ctx)
@@ -36,19 +39,19 @@ int induct_ctx_init (hashcat_ctx_t *hashcat_ctx)
 
   induct_ctx->enabled = false;
 
-  if (user_options->benchmark     == true) return 0;
-  if (user_options->keyspace      == true) return 0;
-  if (user_options->left          == true) return 0;
-  if (user_options->opencl_info   == true) return 0;
-  if (user_options->show          == true) return 0;
-  if (user_options->stdout_flag   == true) return 0;
-  if (user_options->speed_only    == true) return 0;
-  if (user_options->progress_only == true) return 0;
-  if (user_options->usage         == true) return 0;
-  if (user_options->version       == true) return 0;
+  if (user_options->benchmark      == true) return 0;
+  if (user_options->example_hashes == true) return 0;
+  if (user_options->keyspace       == true) return 0;
+  if (user_options->left           == true) return 0;
+  if (user_options->backend_info   == true) return 0;
+  if (user_options->show           == true) return 0;
+  if (user_options->stdout_flag    == true) return 0;
+  if (user_options->speed_only     == true) return 0;
+  if (user_options->progress_only  == true) return 0;
+  if (user_options->usage          == true) return 0;
+  if (user_options->version        == true) return 0;
 
-  if (user_options->attack_mode == ATTACK_MODE_BF)    return 0;
-  if (user_options->attack_mode == ATTACK_MODE_COMBI) return 0;
+  if (user_options->attack_mode != ATTACK_MODE_STRAIGHT) return 0;
 
   induct_ctx->enabled = true;
 

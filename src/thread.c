@@ -5,10 +5,8 @@
 
 #include "common.h"
 #include "types.h"
-#include "memory.h"
 #include "event.h"
 #include "timer.h"
-#include "shared.h"
 #include "thread.h"
 
 /*
@@ -30,7 +28,7 @@ BOOL WINAPI sigHandler_default (DWORD sig)
 
       SetConsoleCtrlHandler (NULL, TRUE);
 
-      hc_sleep (10);
+      sleep (10);
 
       return TRUE;
 
@@ -58,7 +56,7 @@ BOOL WINAPI sigHandler_benchmark (DWORD sig)
 
       SetConsoleCtrlHandler (NULL, TRUE);
 
-      hc_sleep (10);
+      sleep (10);
 
       return TRUE;
 
@@ -254,7 +252,7 @@ int stop_at_checkpoint (hashcat_ctx_t *hashcat_ctx)
 
   if (restore_ctx->enabled == false)
   {
-    event_log_warning (hashcat_ctx, "This feature is disabled when --restore-disable is specified");
+    event_log_warning (hashcat_ctx, "This feature is disabled when --restore-disable is specified.");
 
     return -1;
   }

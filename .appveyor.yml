@@ -1,7 +1,6 @@
 environment:
   CYG_MIRROR: http://cygwin.mirror.constant.com
-  CYG_PACKAGES: make,gcc-core
-  DOCUMENT_FOLDER: /share/doc/hashcat
+  CYG_PACKAGES: make,gcc-core,libiconv-devel
   matrix:
     - CYG_ROOT: C:\cygwin64
       CYG_CACHE: C:\cygwin64\var\cache\setup
@@ -15,12 +14,10 @@ environment:
       CC: gcc
     - MSYSTEM: MINGW64
       MSYS_CACHE: C:\msys64\var\cache\pacman\pkg
-      KERNEL_CACHE: C:\msys64\usr\local\bin\OpenCL\
       BASH: C:\msys64\usr\bin\bash
       CC: gcc
     - MSYSTEM: MINGW32
       MSYS_CACHE: C:\msys64\var\cache\pacman\pkg
-      KERNEL_CACHE: C:\msys64\usr\local\bin\OpenCL\
       BASH: C:\msys64\usr\bin\bash
       CC: gcc
 
@@ -33,8 +30,10 @@ init:
   - git config --global core.autocrlf input
 
 install:
-  - ps: if (Test-Path Env:\CYG_ROOT) { Start-FileDownload "http://cygwin.com/$env:CYG_SETUP" -FileName "$env:CYG_SETUP" }
+  - ps: if (Test-Path Env:\CYG_ROOT) { Start-FileDownload "https://cygwin.com/$env:CYG_SETUP" -FileName "$env:CYG_SETUP" }
   - if defined CYG_ROOT (%CYG_SETUP% --quiet-mode --no-shortcuts --only-site --root "%CYG_ROOT%" --site "%CYG_MIRROR%" --local-package-dir "%CYG_CACHE%" --packages "%CYG_PACKAGES%" --upgrade-also)
+  # (temporary?) problem with msys/pacman/objc/ada (see https://github.com/msys2/msys2/wiki/FAQ)
+  - if defined MSYSTEM (%BASH% -lc "pacman -Rns --noconfirm mingw-w64-{i686,x86_64}-gcc-ada mingw-w64-{i686,x86_64}-gcc-objc")
   - if defined MSYSTEM (%BASH% -lc "pacman -Suuy --noconfirm")
   # the following line is not a duplicate line:
   # it is necessary to upgrade the MSYS base files and after that all the packages
@@ -42,23 +41,26 @@ install:
   - if defined MSYSTEM (%BASH% -lc "pacman -Suuy --noconfirm")
 
 build_script:
-  - if defined BASH (%BASH% -lc "cd $(cygpath ${APPVEYOR_BUILD_FOLDER}) && git submodule update --init && make install")
+  - if defined BASH (%BASH% -lc "cd $(cygpath ${APPVEYOR_BUILD_FOLDER}) && git submodule update --init && make")
 
 test_script:
   # some file globbing tests
   #  1. hash file should not exist and therefore hashcat should complain (if it does not there might be a problem)
   #  2. hash file should expand to example0.hash and succeed
   - ps: >-
-      if (Test-Path Env:\MSYSTEM)
-      {
-        mkdir $env:KERNEL_CACHE 2>&1 | out-null
-      }
-
-      & $env:BASH -lc "hashcat.exe -m 0 --show $env:DOCUMENT_FOLDER/*file_not_found.hash" 2>&1 | out-null
+      & $env:BASH -lc "cd '$env:APPVEYOR_BUILD_FOLDER' && ./hashcat.exe -m 0 --show *file_not_found.hash" 2>&1 | out-null
 
       if ($LastExitCode -eq 0)
       {
         throw "test failed"
       }
 
-      & $env:BASH -lc "hashcat.exe -m 0 --show $env:DOCUMENT_FOLDER/*ple0.hash"
+      & $env:BASH -lc "cd '$env:APPVEYOR_BUILD_FOLDER' && ./hashcat.exe -m 0 --show *ple0.hash"
+
+only_commits:
+  files:
+    - src/**/*
+    - deps/**/*
+    - include/*
+    - OpenCL/inc_*
+    - Makefile

@@ -7,64 +7,102 @@
 #include "types.h"
 #include "convert.h"
 
-static bool printable_utf8 (const u8 *buf, const int len)
+/*
+  Source:
+   http://www.unicode.org/versions/Unicode7.0.0/UnicodeStandard-7.0.pdf
+   page 124, 3.9 "Unicode Encoding Forms", "UTF-8"
+
+  Table 3-7. Well-Formed UTF-8 Byte Sequences
+  -----------------------------------------------------------------------------
+  |  Code Points        | First Byte | Second Byte | Third Byte | Fourth Byte |
+  |  U+0000..U+007F     |     00..7F |             |            |             |
+  |  U+0080..U+07FF     |     C2..DF |      80..BF |            |             |
+  |  U+0800..U+0FFF     |         E0 |      A0..BF |     80..BF |             |
+  |  U+1000..U+CFFF     |     E1..EC |      80..BF |     80..BF |             |
+  |  U+D000..U+D7FF     |         ED |      80..9F |     80..BF |             |
+  |  U+E000..U+FFFF     |     EE..EF |      80..BF |     80..BF |             |
+  |  U+10000..U+3FFFF   |         F0 |      90..BF |     80..BF |      80..BF |
+  |  U+40000..U+FFFFF   |     F1..F3 |      80..BF |     80..BF |      80..BF |
+  |  U+100000..U+10FFFF |         F4 |      80..8F |     80..BF |      80..BF |
+  -----------------------------------------------------------------------------
+*/
+
+static bool printable_utf8 (const u8 *buf, const size_t len)
 {
-  u8 a;
-  int length;
-  const u8 *buf_end = buf + len;
-  const u8 *srcptr;
-  const char trailingBytesUTF8[64] = {
-    1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1, 1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,1,
-    2,2,2,2,2,2,2,2,2,2,2,2,2,2,2,2, 3,3,3,3,3,3,3,3,4,4,4,4,5,5,5,5
+  // there's 9 different code point types for utf8 and ...
+
+  const int cp_types[256] =
+  {
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+     0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,  0,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1,
+    -1, -1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+     1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,  1,
+     2,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  3,  4,  5,  5,
+     6,  7,  7,  7,  8, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1, -1
   };
 
-  while (buf < buf_end) {
+  // ... they can be directly translated into a fixed length sequence of bytes
 
-    // This line rejects unprintables. The rest of the function
-    // reliably rejects invalid UTF-8 sequences.
-    if (*buf < 0x20 || *buf == 0x7f) return false;
+  const size_t cp_lens[9] = { 1, 2, 3, 3, 3, 3, 4, 4, 4 };
 
-    if (*buf < 0x80) {
-      buf++;
-      continue;
-    }
+  for (size_t pos = 0; pos < len; pos++)
+  {
+    const u8 c0 = buf[pos];
 
-    length = trailingBytesUTF8[*buf & 0x3f] + 1;
-    srcptr = buf + length;
+    const int cp_type = cp_types[c0];
 
-    if (srcptr > buf_end) return false;
+    if (cp_type == -1) return false;
 
-    switch (length) {
-    default:
-      return false;
-    case 4:
-      if ((a = (*--srcptr)) < 0x80 || a > 0xbf) return false;
-    case 3:
-      if ((a = (*--srcptr)) < 0x80 || a > 0xbf) return false;
-    case 2:
-      if ((a = (*--srcptr)) < 0x80 || a > 0xbf) return false;
+    // make sure to not read outside the buffer
 
-      switch (*buf) {
-      case 0xE0: if (a < 0xa0) return false; break;
-      case 0xED: if (a > 0x9f) return false; break;
-      case 0xF0: if (a < 0x90) return false; break;
-      case 0xF4: if (a > 0x8f) return false;
+    const size_t cp_len = cp_lens[cp_type];
+
+    if ((pos + cp_len) > len) return false;
+
+    // multibyte from here
+
+    if (cp_len >= 2)
+    {
+      pos++;
+
+      const u8 c1 = buf[pos];
+
+      switch (cp_type)
+      {
+        case 2:   if ((c1 < 0xa0) || (c1 > 0xbf)) return false; break;
+        case 4:   if ((c1 < 0x80) || (c1 > 0x9f)) return false; break;
+        case 6:   if ((c1 < 0x90) || (c1 > 0xbf)) return false; break;
+        case 8:   if ((c1 < 0x80) || (c1 > 0x8f)) return false; break;
+        default:  if ((c1 < 0x80) || (c1 > 0xbf)) return false; break;
       }
 
-    case 1:
-      if (*buf >= 0x80 && *buf < 0xc2) return false;
-    }
-    if (*buf > 0xf4)
-      return false;
+      for (size_t j = 2; j < cp_len; j++)
+      {
+        pos++;
 
-    buf += length;
+        const u8 cx = buf[pos];
+
+        if ((cx < 0x80) || (cx > 0xbf)) return false;
+      }
+    }
   }
+
   return true;
 }
 
-static bool printable_ascii (const u8 *buf, const int len)
+static bool printable_ascii (const u8 *buf, const size_t len)
 {
-  for (int i = 0; i < len; i++)
+  for (size_t i = 0; i < len; i++)
   {
     const u8 c = buf[i];
 
@@ -75,9 +113,9 @@ static bool printable_ascii (const u8 *buf, const int len)
   return true;
 }
 
-static bool matches_separator (const u8 *buf, const int len, const char separator)
+static bool matches_separator (const u8 *buf, const size_t len, const char separator)
 {
-  for (int i = 0; i < len; i++)
+  for (size_t i = 0; i < len; i++)
   {
     const char c = (char) buf[i];
 
@@ -87,9 +125,15 @@ static bool matches_separator (const u8 *buf, const int len, const char separato
   return false;
 }
 
-bool is_hexify (const u8 *buf, const int len)
+bool is_hexify (const u8 *buf, const size_t len)
 {
   if (len < 6) return false; // $HEX[] = 6
+
+  // length of the hex string must be a multiple of 2
+  // and the length of "$HEX[]" is 6 (also an even length)
+  // Therefore the overall length must be an even number:
+
+  if ((len & 1) == 1) return false;
 
   if (buf[0]       != '$') return (false);
   if (buf[1]       != 'H') return (false);
@@ -103,9 +147,9 @@ bool is_hexify (const u8 *buf, const int len)
   return true;
 }
 
-int exec_unhexify (const u8 *in_buf, const int in_len, u8 *out_buf, const int out_sz)
+size_t exec_unhexify (const u8 *in_buf, const size_t in_len, u8 *out_buf, const size_t out_sz)
 {
-  int i, j;
+  size_t i, j;
 
   for (i = 0, j = 5; j < in_len - 1; i += 1, j += 2)
   {
@@ -119,7 +163,7 @@ int exec_unhexify (const u8 *in_buf, const int in_len, u8 *out_buf, const int ou
   return (i);
 }
 
-bool need_hexify (const u8 *buf, const int len, const char separator, bool always_ascii)
+bool need_hexify (const u8 *buf, const size_t len, const char separator, bool always_ascii)
 {
   bool rc = false;
 
@@ -146,24 +190,109 @@ bool need_hexify (const u8 *buf, const int len, const char separator, bool alway
     }
   }
 
+  // also test if the password is of the format $HEX[]:
+
+  if (rc == false)
+  {
+    if (is_hexify (buf, len))
+    {
+      rc = true;
+    }
+  }
+
   return rc;
 }
 
-void exec_hexify (const u8 *buf, const int len, u8 *out)
+void exec_hexify (const u8 *buf, const size_t len, u8 *out)
 {
-  const int max_len = (len >= 31) ? 31 : len;
+  const size_t max_len = (len > PW_MAX) ? PW_MAX : len;
 
-  for (int i = max_len - 1, j = i * 2; i >= 0; i -= 1, j -= 2)
+  for (int i = (int) max_len - 1, j = i * 2; i >= 0; i -= 1, j -= 2)
   {
-    u8_to_hex_lower (buf[i], out + j);
+    u8_to_hex (buf[i], out + j);
   }
 
   out[max_len * 2] = 0;
 }
 
-bool is_valid_hex_string (const u8 *s, const int len)
+bool is_valid_base64a_string (const u8 *s, const size_t len)
 {
-  for (int i = 0; i < len; i++)
+  for (size_t i = 0; i < len; i++)
+  {
+    const u8 c = s[i];
+
+    if (is_valid_base64a_char (c) == false) return false;
+  }
+
+  return true;
+}
+
+bool is_valid_base64a_char (const u8 c)
+{
+  if ((c >= '0') && (c <= '9')) return true;
+  if ((c >= 'A') && (c <= 'Z')) return true;
+  if ((c >= 'a') && (c <= 'z')) return true;
+
+  if (c == '+') return true;
+  if (c == '/') return true;
+  if (c == '=') return true;
+
+  return false;
+}
+
+bool is_valid_base64b_string (const u8 *s, const size_t len)
+{
+  for (size_t i = 0; i < len; i++)
+  {
+    const u8 c = s[i];
+
+    if (is_valid_base64b_char (c) == false) return false;
+  }
+
+  return true;
+}
+
+bool is_valid_base64b_char (const u8 c)
+{
+  if ((c >= '0') && (c <= '9')) return true;
+  if ((c >= 'A') && (c <= 'Z')) return true;
+  if ((c >= 'a') && (c <= 'z')) return true;
+
+  if (c == '.') return true;
+  if (c == '/') return true;
+  if (c == '=') return true;
+
+  return false;
+}
+
+bool is_valid_base64c_string (const u8 *s, const size_t len)
+{
+  for (size_t i = 0; i < len; i++)
+  {
+    const u8 c = s[i];
+
+    if (is_valid_base64c_char (c) == false) return false;
+  }
+
+  return true;
+}
+
+bool is_valid_base64c_char (const u8 c)
+{
+  if ((c >= '0') && (c <= '9')) return true;
+  if ((c >= 'A') && (c <= 'Z')) return true;
+  if ((c >= 'a') && (c <= 'z')) return true;
+
+  if (c == '_') return true;
+  if (c == '-') return true;
+  if (c == '=') return true;
+
+  return false;
+}
+
+bool is_valid_hex_string (const u8 *s, const size_t len)
+{
+  for (size_t i = 0; i < len; i++)
   {
     const u8 c = s[i];
 
@@ -182,6 +311,25 @@ bool is_valid_hex_char (const u8 c)
   return false;
 }
 
+bool is_valid_digit_string (const u8 *s, const size_t len)
+{
+  for (size_t i = 0; i < len; i++)
+  {
+    const u8 c = s[i];
+
+    if (is_valid_digit_char (c) == false) return false;
+  }
+
+  return true;
+}
+
+bool is_valid_digit_char (const u8 c)
+{
+  if ((c >= '0') && (c <= '9')) return true;
+
+  return false;
+}
+
 u8 hex_convert (const u8 c)
 {
   return (c & 15) + (c >> 6) * 9;
@@ -191,8 +339,8 @@ u8 hex_to_u8 (const u8 hex[2])
 {
   u8 v = 0;
 
-  v |= ((u8) hex_convert (hex[1]) << 0);
-  v |= ((u8) hex_convert (hex[0]) << 4);
+  v |= (hex_convert (hex[1]) << 0);
+  v |= (hex_convert (hex[0]) << 4);
 
   return (v);
 }
@@ -237,7 +385,7 @@ u64 hex_to_u64 (const u8 hex[16])
   return (v);
 }
 
-void u8_to_hex_lower (const u8 v, u8 hex[2])
+void u8_to_hex (const u8 v, u8 hex[2])
 {
   const u8 tbl[0x10] =
   {
@@ -249,7 +397,7 @@ void u8_to_hex_lower (const u8 v, u8 hex[2])
   hex[0] = tbl[v >>  4 & 15];
 }
 
-void u32_to_hex_lower (const u32 v, u8 hex[8])
+void u32_to_hex (const u32 v, u8 hex[8])
 {
   const u8 tbl[0x10] =
   {
@@ -267,7 +415,7 @@ void u32_to_hex_lower (const u32 v, u8 hex[8])
   hex[6] = tbl[v >> 28 & 15];
 }
 
-void u64_to_hex_lower (const u64 v, u8 hex[16])
+void u64_to_hex (const u64 v, u8 hex[16])
 {
   const u8 tbl[0x10] =
   {
@@ -306,8 +454,8 @@ u8 int_to_base32 (const u8 c)
 
 u8 base32_to_int (const u8 c)
 {
-       if ((c >= 'A') && (c <= 'Z')) return c - 'A';
-  else if ((c >= '2') && (c <= '7')) return c - '2' + 26;
+  if ((c >= 'A') && (c <= 'Z')) return c - 'A';
+  if ((c >= '2') && (c <= '7')) return c - '2' + 26;
 
   return 0;
 }
@@ -325,8 +473,8 @@ u8 int_to_itoa32 (const u8 c)
 
 u8 itoa32_to_int (const u8 c)
 {
-       if ((c >= '0') && (c <= '9')) return c - '0';
-  else if ((c >= 'a') && (c <= 'v')) return c - 'a' + 10;
+  if ((c >= '0') && (c <= '9')) return c - '0';
+  if ((c >= 'a') && (c <= 'v')) return c - 'a' + 10;
 
   return 0;
 }
@@ -407,6 +555,83 @@ u8 base64_to_int (const u8 c)
   return tbl[c];
 }
 
+// alternate base64 using ./ instead of +/, used in python passlib hashes
+u8 int_to_ab64 (const u8 c)
+{
+  const u8 tbl[0x40] =
+  {
+    0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
+    0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+    0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76,
+    0x77, 0x78, 0x79, 0x7a, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x2e, 0x2f,
+  };
+
+  return tbl[c];
+}
+
+u8 ab64_to_int (const u8 c)
+{
+  const u8 tbl[0x100] =
+  {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x3f,
+    0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+    0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,
+    0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32, 0x33, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+
+  return tbl[c];
+}
+
+u8 int_to_base64url (const u8 c)
+{
+  const u8 tbl[0x40] =
+  {
+    0x41, 0x42, 0x43, 0x44, 0x45, 0x46, 0x47, 0x48, 0x49, 0x4a, 0x4b, 0x4c, 0x4d, 0x4e, 0x4f, 0x50,
+    0x51, 0x52, 0x53, 0x54, 0x55, 0x56, 0x57, 0x58, 0x59, 0x5a, 0x61, 0x62, 0x63, 0x64, 0x65, 0x66,
+    0x67, 0x68, 0x69, 0x6a, 0x6b, 0x6c, 0x6d, 0x6e, 0x6f, 0x70, 0x71, 0x72, 0x73, 0x74, 0x75, 0x76,
+    0x77, 0x78, 0x79, 0x7a, 0x30, 0x31, 0x32, 0x33, 0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x2d, 0x5f,
+  };
+
+  return tbl[c];
+}
+
+u8 base64url_to_int (const u8 c)
+{
+  const u8 tbl[0x100] =
+  {
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x3e, 0x00, 0x00,
+    0x34, 0x35, 0x36, 0x37, 0x38, 0x39, 0x3a, 0x3b, 0x3c, 0x3d, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x01, 0x02, 0x03, 0x04, 0x05, 0x06, 0x07, 0x08, 0x09, 0x0a, 0x0b, 0x0c, 0x0d, 0x0e,
+    0x0f, 0x10, 0x11, 0x12, 0x13, 0x14, 0x15, 0x16, 0x17, 0x18, 0x19, 0x00, 0x00, 0x00, 0x00, 0x3f,
+    0x00, 0x1a, 0x1b, 0x1c, 0x1d, 0x1e, 0x1f, 0x20, 0x21, 0x22, 0x23, 0x24, 0x25, 0x26, 0x27, 0x28,
+    0x29, 0x2a, 0x2b, 0x2c, 0x2d, 0x2e, 0x2f, 0x30, 0x31, 0x32, 0x33, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+    0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
+  };
+
+  return tbl[c];
+}
+
 u8 int_to_bf64 (const u8 c)
 {
   const u8 tbl[0x40] =
@@ -447,43 +672,51 @@ u8 bf64_to_int (const u8 c)
 
 u8 int_to_lotus64 (const u8 c)
 {
-       if (c  < 10) return '0' + c;
-  else if (c  < 36) return 'A' + c - 10;
-  else if (c  < 62) return 'a' + c - 36;
-  else if (c == 62) return '+';
-  else if (c == 63) return '/';
+  if (c  < 10) return '0' + c;
+  if (c  < 36) return 'A' + c - 10;
+  if (c  < 62) return 'a' + c - 36;
+  if (c == 62) return '+';
+  if (c == 63) return '/';
 
   return 0;
 }
 
 u8 lotus64_to_int (const u8 c)
 {
-       if ((c >= '0') && (c <= '9')) return c - '0';
-  else if ((c >= 'A') && (c <= 'Z')) return c - 'A' + 10;
-  else if ((c >= 'a') && (c <= 'z')) return c - 'a' + 36;
-  else if (c == '+') return 62;
-  else if (c == '/') return 63;
-  else
+  if ((c >= '0') && (c <= '9')) return c - '0';
+  if ((c >= 'A') && (c <= 'Z')) return c - 'A' + 10;
+  if ((c >= 'a') && (c <= 'z')) return c - 'a' + 36;
+  if (c == '+') return 62;
+  if (c == '/') return 63;
 
   return 0;
 }
 
-int base32_decode (u8 (*f) (const u8), const u8 *in_buf, int in_len, u8 *out_buf)
+size_t base32_decode (u8 (*f) (const u8), const u8 *in_buf, const size_t in_len, u8 *out_buf)
 {
   const u8 *in_ptr = in_buf;
 
   u8 *out_ptr = out_buf;
 
-  for (int i = 0; i < in_len; i += 8)
+  for (size_t i = 0; i < in_len; i += 8)
   {
-    const u8 out_val0 = f (in_ptr[0] & 0x7f);
-    const u8 out_val1 = f (in_ptr[1] & 0x7f);
-    const u8 out_val2 = f (in_ptr[2] & 0x7f);
-    const u8 out_val3 = f (in_ptr[3] & 0x7f);
-    const u8 out_val4 = f (in_ptr[4] & 0x7f);
-    const u8 out_val5 = f (in_ptr[5] & 0x7f);
-    const u8 out_val6 = f (in_ptr[6] & 0x7f);
-    const u8 out_val7 = f (in_ptr[7] & 0x7f);
+    const u8 f0 = ((i + 0) < in_len) ? in_ptr[0] : 0;
+    const u8 f1 = ((i + 1) < in_len) ? in_ptr[1] : 0;
+    const u8 f2 = ((i + 2) < in_len) ? in_ptr[2] : 0;
+    const u8 f3 = ((i + 3) < in_len) ? in_ptr[3] : 0;
+    const u8 f4 = ((i + 4) < in_len) ? in_ptr[4] : 0;
+    const u8 f5 = ((i + 5) < in_len) ? in_ptr[5] : 0;
+    const u8 f6 = ((i + 6) < in_len) ? in_ptr[6] : 0;
+    const u8 f7 = ((i + 7) < in_len) ? in_ptr[7] : 0;
+
+    const u8 out_val0 = f (f0 & 0x7f);
+    const u8 out_val1 = f (f1 & 0x7f);
+    const u8 out_val2 = f (f2 & 0x7f);
+    const u8 out_val3 = f (f3 & 0x7f);
+    const u8 out_val4 = f (f4 & 0x7f);
+    const u8 out_val5 = f (f5 & 0x7f);
+    const u8 out_val6 = f (f6 & 0x7f);
+    const u8 out_val7 = f (f7 & 0x7f);
 
     out_ptr[0] =                            ((out_val0 << 3) & 0xf8) | ((out_val1 >> 2) & 0x07);
     out_ptr[1] = ((out_val1 << 6) & 0xc0) | ((out_val2 << 1) & 0x3e) | ((out_val3 >> 4) & 0x01);
@@ -495,34 +728,42 @@ int base32_decode (u8 (*f) (const u8), const u8 *in_buf, int in_len, u8 *out_buf
     out_ptr += 5;
   }
 
-  for (int i = 0; i < in_len; i++)
+  size_t tmp_len = 0;
+
+  for (size_t i = 0; i < in_len; i++, tmp_len++)
   {
     if (in_buf[i] != '=') continue;
 
-    in_len = i;
+    break;
   }
 
-  int out_len = (in_len * 5) / 8;
+  size_t out_len = (tmp_len * 5) / 8;
 
   return out_len;
 }
 
-int base32_encode (u8 (*f) (const u8), const u8 *in_buf, int in_len, u8 *out_buf)
+size_t base32_encode (u8 (*f) (const u8), const u8 *in_buf, const size_t in_len, u8 *out_buf)
 {
   const u8 *in_ptr = in_buf;
 
   u8 *out_ptr = out_buf;
 
-  for (int i = 0; i < in_len; i += 5)
+  for (size_t i = 0; i < in_len; i += 5)
   {
-    const u8 out_val0 = f (                            ((in_ptr[0] >> 3) & 0x1f));
-    const u8 out_val1 = f (((in_ptr[0] << 2) & 0x1c) | ((in_ptr[1] >> 6) & 0x03));
-    const u8 out_val2 = f (                            ((in_ptr[1] >> 1) & 0x1f));
-    const u8 out_val3 = f (((in_ptr[1] << 4) & 0x10) | ((in_ptr[2] >> 4) & 0x0f));
-    const u8 out_val4 = f (((in_ptr[2] << 1) & 0x1e) | ((in_ptr[3] >> 7) & 0x01));
-    const u8 out_val5 = f (                            ((in_ptr[3] >> 2) & 0x1f));
-    const u8 out_val6 = f (((in_ptr[3] << 3) & 0x18) | ((in_ptr[4] >> 5) & 0x07));
-    const u8 out_val7 = f (                            ((in_ptr[4] >> 0) & 0x1f));
+    const u8 f0 = ((i + 0) < in_len) ? in_ptr[0] : 0;
+    const u8 f1 = ((i + 1) < in_len) ? in_ptr[1] : 0;
+    const u8 f2 = ((i + 2) < in_len) ? in_ptr[2] : 0;
+    const u8 f3 = ((i + 3) < in_len) ? in_ptr[3] : 0;
+    const u8 f4 = ((i + 4) < in_len) ? in_ptr[4] : 0;
+
+    const u8 out_val0 = f (                     ((f0 >> 3) & 0x1f));
+    const u8 out_val1 = f (((f0 << 2) & 0x1c) | ((f1 >> 6) & 0x03));
+    const u8 out_val2 = f (                     ((f1 >> 1) & 0x1f));
+    const u8 out_val3 = f (((f1 << 4) & 0x10) | ((f2 >> 4) & 0x0f));
+    const u8 out_val4 = f (((f2 << 1) & 0x1e) | ((f3 >> 7) & 0x01));
+    const u8 out_val5 = f (                     ((f3 >> 2) & 0x1f));
+    const u8 out_val6 = f (((f3 << 3) & 0x18) | ((f4 >> 5) & 0x07));
+    const u8 out_val7 = f (                     ((f4 >> 0) & 0x1f));
 
     out_ptr[0] = out_val0 & 0x7f;
     out_ptr[1] = out_val1 & 0x7f;
@@ -549,18 +790,23 @@ int base32_encode (u8 (*f) (const u8), const u8 *in_buf, int in_len, u8 *out_buf
   return out_len;
 }
 
-int base64_decode (u8 (*f) (const u8), const u8 *in_buf, int in_len, u8 *out_buf)
+size_t base64_decode (u8 (*f) (const u8), const u8 *in_buf, const size_t in_len, u8 *out_buf)
 {
   const u8 *in_ptr = in_buf;
 
   u8 *out_ptr = out_buf;
 
-  for (int i = 0; i < in_len; i += 4)
+  for (size_t i = 0; i < in_len; i += 4)
   {
-    const u8 out_val0 = f (in_ptr[0] & 0x7f);
-    const u8 out_val1 = f (in_ptr[1] & 0x7f);
-    const u8 out_val2 = f (in_ptr[2] & 0x7f);
-    const u8 out_val3 = f (in_ptr[3] & 0x7f);
+    const u8 f0 = ((i + 0) < in_len) ? in_ptr[0] : 0;
+    const u8 f1 = ((i + 1) < in_len) ? in_ptr[1] : 0;
+    const u8 f2 = ((i + 2) < in_len) ? in_ptr[2] : 0;
+    const u8 f3 = ((i + 3) < in_len) ? in_ptr[3] : 0;
+
+    const u8 out_val0 = f (f0 & 0x7f);
+    const u8 out_val1 = f (f1 & 0x7f);
+    const u8 out_val2 = f (f2 & 0x7f);
+    const u8 out_val3 = f (f3 & 0x7f);
 
     out_ptr[0] = ((out_val0 << 2) & 0xfc) | ((out_val1 >> 4) & 0x03);
     out_ptr[1] = ((out_val1 << 4) & 0xf0) | ((out_val2 >> 2) & 0x0f);
@@ -570,30 +816,36 @@ int base64_decode (u8 (*f) (const u8), const u8 *in_buf, int in_len, u8 *out_buf
     out_ptr += 3;
   }
 
-  for (int i = 0; i < in_len; i++)
+  size_t tmp_len = 0;
+
+  for (size_t i = 0; i < in_len; i++, tmp_len++)
   {
     if (in_buf[i] != '=') continue;
 
-    in_len = i;
+    break;
   }
 
-  int out_len = (in_len * 6) / 8;
+  size_t out_len = (tmp_len * 6) / 8;
 
   return out_len;
 }
 
-int base64_encode (u8 (*f) (const u8), const u8 *in_buf, int in_len, u8 *out_buf)
+size_t base64_encode (u8 (*f) (const u8), const u8 *in_buf, const size_t in_len, u8 *out_buf)
 {
   const u8 *in_ptr = in_buf;
 
   u8 *out_ptr = out_buf;
 
-  for (int i = 0; i < in_len; i += 3)
+  for (size_t i = 0; i < in_len; i += 3)
   {
-    const u8 out_val0 = f (                            ((in_ptr[0] >> 2) & 0x3f));
-    const u8 out_val1 = f (((in_ptr[0] << 4) & 0x30) | ((in_ptr[1] >> 4) & 0x0f));
-    const u8 out_val2 = f (((in_ptr[1] << 2) & 0x3c) | ((in_ptr[2] >> 6) & 0x03));
-    const u8 out_val3 = f (                            ((in_ptr[2] >> 0) & 0x3f));
+    const u8 f0 = ((i + 0) < in_len) ? in_ptr[0] : 0;
+    const u8 f1 = ((i + 1) < in_len) ? in_ptr[1] : 0;
+    const u8 f2 = ((i + 2) < in_len) ? in_ptr[2] : 0;
+
+    const u8 out_val0 = f (                     ((f0 >> 2) & 0x3f));
+    const u8 out_val1 = f (((f0 << 4) & 0x30) | ((f1 >> 4) & 0x0f));
+    const u8 out_val2 = f (((f1 << 2) & 0x3c) | ((f2 >> 6) & 0x03));
+    const u8 out_val3 = f (                     ((f2 >> 0) & 0x3f));
 
     out_ptr[0] = out_val0 & 0x7f;
     out_ptr[1] = out_val1 & 0x7f;
@@ -616,12 +868,124 @@ int base64_encode (u8 (*f) (const u8), const u8 *in_buf, int in_len, u8 *out_buf
   return out_len;
 }
 
-void lowercase (u8 *buf, int len)
+void lowercase (u8 *buf, const size_t len)
 {
-  for (int i = 0; i < len; i++) buf[i] = tolower (buf[i]);
+  for (size_t i = 0; i < len; i++) buf[i] = (u8) tolower ((int) buf[i]);
 }
 
-void uppercase (u8 *buf, int len)
+void uppercase (u8 *buf, const size_t len)
 {
-  for (int i = 0; i < len; i++) buf[i] = toupper (buf[i]);
+  for (size_t i = 0; i < len; i++) buf[i] = (u8) toupper ((int) buf[i]);
+}
+
+u8 v8a_from_v32 (const u32 v32)
+{
+  vconv32_t v;
+
+  v.v32 = v32;
+
+  return v.v8.a;
+}
+
+u8 v8b_from_v32 (const u32 v32)
+{
+  vconv32_t v;
+
+  v.v32 = v32;
+
+  return v.v8.b;
+}
+
+u8 v8c_from_v32 (const u32 v32)
+{
+  vconv32_t v;
+
+  v.v32 = v32;
+
+  return v.v8.c;
+}
+
+u8 v8d_from_v32 (const u32 v32)
+{
+  vconv32_t v;
+
+  v.v32 = v32;
+
+  return v.v8.d;
+}
+
+u16 v16a_from_v32 (const u32 v32)
+{
+  vconv32_t v;
+
+  v.v32 = v32;
+
+  return v.v16.a;
+}
+
+u16 v16b_from_v32 (const u32 v32)
+{
+  vconv32_t v;
+
+  v.v32 = v32;
+
+  return v.v16.b;
+}
+
+u32 v32_from_v16ab (const u16 v16a, const u16 v16b)
+{
+  vconv32_t v;
+
+  v.v16.a = v16a;
+  v.v16.b = v16b;
+
+  return v.v32;
+}
+
+u32 v32a_from_v64 (const u64 v64)
+{
+  vconv64_t v;
+
+  v.v64 = v64;
+
+  return v.v32.a;
+}
+
+u32 v32b_from_v64 (const u64 v64)
+{
+  vconv64_t v;
+
+  v.v64 = v64;
+
+  return v.v32.b;
+}
+
+u64 v64_from_v32ab (const u32 v32a, const u32 v32b)
+{
+  vconv64_t v;
+
+  v.v32.a = v32a;
+  v.v32.b = v32b;
+
+  return v.v64;
+}
+
+int hex_decode (const u8 *in_buf, const int in_len, u8 *out_buf)
+{
+  for (int i = 0, j = 0; i < in_len; i += 2, j += 1)
+  {
+    out_buf[j] = hex_to_u8 (&in_buf[i]);
+  }
+
+  return in_len / 2;
+}
+
+int hex_encode (const u8 *in_buf, const int in_len, u8 *out_buf)
+{
+  for (int i = 0, j = 0; i < in_len; i += 1, j += 2)
+  {
+    u8_to_hex (in_buf[i], &out_buf[j]);
+  }
+
+  return in_len * 2;
 }

@@ -1,12 +1,21 @@
-hashcat v3.40
-=============
 
-AMD users on Windows require "AMD Radeon Software Crimson Edition" (15.12 or later)
-AMD users on Linux require "AMDGPU-Pro Driver" (16.40 or later)
-Intel CPU users require "OpenCL Runtime for Intel Core and Intel Xeon Processors" (16.1.1 or later)
-Intel GPU on Windows users require "OpenCL Driver for Intel Iris and Intel HD Graphics"
-Intel GPU on Linux users require "OpenCL 2.0 GPU Driver Package for Linux" (2.0 or later)
-NVidia users require "NVIDIA Driver" (367.x or later)
+      _____:  _____________         _____:  -aTZ!      _______ ____
+     _\    |__\_______   _/_______ _\    |_____ _______\______    /__ ______
+     |     _     |  __   \   ____/____   _     |   ___/____  __    |_______/
+     |:    |    .|  \    _\____      /   |    .|   \      /  \    :|     |
+     |_____|    :|______/     /    //____|    :|___     //_________|    :|
+           |_____|     /___________/     |_____|  /_____/        /_______|
+                 :                             :                         :
+
+hashcat v5.1.0
+==============
+
+AMD GPUs on Linux require "RadeonOpenCompute (ROCm)" Software Platform (1.6.180 or later)
+AMD GPUs on Windows require "AMD Radeon Software Crimson Edition" (15.12 or later)
+Intel CPUs require "OpenCL Runtime for Intel Core and Intel Xeon Processors" (16.1.1 or later)
+Intel GPUs on Linux require "OpenCL 2.0 GPU Driver Package for Linux" (2.0 or later)
+Intel GPUs on Windows require "OpenCL Driver for Intel Iris and Intel HD Graphics"
+NVIDIA GPUs require "NVIDIA Driver" (418.56 or later) and "CUDA Toolkit" (10.1 or later)
 
 ##
 ## Features
@@ -16,11 +25,12 @@ NVidia users require "NVIDIA Driver" (367.x or later)
 - World's first and only in-kernel rule engine
 - Free
 - Open-Source (MIT License)
-- Multi-OS (Linux, Windows and OSX)
+- Multi-OS (Linux, Windows and macOS)
 - Multi-Platform (CPU, GPU, DSP, FPGA, etc., everything that comes with an OpenCL runtime)
 - Multi-Hash (Cracking multiple hashes at the same time)
 - Multi-Devices (Utilizing multiple devices in same system)
 - Multi-Device-Types (Utilizing mixed device types in same system)
+- Supports password candidate brain functionality
 - Supports distributed cracking networks (using overlay)
 - Supports interactive pause / resume
 - Supports sessions
@@ -39,51 +49,69 @@ NVidia users require "NVIDIA Driver" (367.x or later)
 
 - MD4
 - MD5
-- Half MD5 (left, mid, right)
 - SHA1
-- SHA-224
-- SHA-256
-- SHA-384
-- SHA-512
-- SHA-3 (Keccak)
-- SipHash
-- Skip32
-- RipeMD160
-- Whirlpool
-- DES (PT = $salt, key = $pass)
-- 3DES (PT = $salt, key = $pass)
+- SHA2-224
+- SHA2-256
+- SHA2-384
+- SHA2-512
+- SHA3-224
+- SHA3-256
+- SHA3-384
+- SHA3-512
+- RIPEMD-160
+- BLAKE2b-512
+- GOST R 34.11-2012 (Streebog) 256-bit, big-endian
+- GOST R 34.11-2012 (Streebog) 512-bit, big-endian
 - GOST R 34.11-94
-- GOST R 34.11-2012 (Streebog) 256-bit
-- GOST R 34.11-2012 (Streebog) 512-bit
+- Half MD5
+- Java Object hashCode()
+- Keccak-224
+- Keccak-256
+- Keccak-384
+- Keccak-512
+- sha256(sha256_bin(pass))
+- Whirlpool
+- SipHash
+- BitShares v0.x - sha512(sha512_bin(pass))
 - md5($pass.$salt)
 - md5($salt.$pass)
-- md5(unicode($pass).$salt)
-- md5($salt.unicode($pass))
 - md5($salt.$pass.$salt)
 - md5($salt.md5($pass))
-- md5($salt.md5($salt.$pass))
 - md5($salt.md5($pass.$salt))
+- md5($salt.md5($salt.$pass))
+- md5($salt.sha1($salt.$pass))
+- md5($salt.utf16le($pass))
 - md5(md5($pass))
 - md5(md5($pass).md5($salt))
-- md5(strtoupper(md5($pass)))
 - md5(sha1($pass))
+- md5(sha1($pass).md5($pass).sha1($pass))
+- md5(sha1($salt).md5($pass))
+- md5(strtoupper(md5($pass)))
+- md5(utf16le($pass).$salt)
 - sha1($pass.$salt)
 - sha1($salt.$pass)
-- sha1(unicode($pass).$salt)
-- sha1($salt.unicode($pass))
-- sha1(sha1($pass))
-- sha1($salt.sha1($pass))
-- sha1(md5($pass))
 - sha1($salt.$pass.$salt)
+- sha1($salt.sha1($pass))
+- sha1($salt.utf16le($pass))
+- sha1($salt1.$pass.$salt2)
 - sha1(CX)
+- sha1(md5($pass))
+- sha1(md5($pass).$salt)
+- sha1(md5($pass.$salt))
+- sha1(md5(md5($pass)))
+- sha1(sha1($pass))
+- sha1(utf16le($pass).$salt)
 - sha256($pass.$salt)
 - sha256($salt.$pass)
-- sha256(unicode($pass).$salt)
-- sha256($salt.unicode($pass))
+- sha256($salt.utf16le($pass))
+- sha256(md5($pass))
+- sha256(sha256($pass).$salt)
+- sha256(utf16le($pass).$salt)
 - sha512($pass.$salt)
 - sha512($salt.$pass)
-- sha512(unicode($pass).$salt)
-- sha512($salt.unicode($pass))
+- sha512($salt.utf16le($pass))
+- sha512(utf16le($pass).$salt)
+- Ruby on Rails Restful-Authentication
 - HMAC-MD5 (key = $pass)
 - HMAC-MD5 (key = $salt)
 - HMAC-SHA1 (key = $pass)
@@ -92,136 +120,201 @@ NVidia users require "NVIDIA Driver" (367.x or later)
 - HMAC-SHA256 (key = $salt)
 - HMAC-SHA512 (key = $pass)
 - HMAC-SHA512 (key = $salt)
+- HMAC-Streebog-256 (key = $pass), big-endian
+- HMAC-Streebog-256 (key = $salt), big-endian
+- HMAC-Streebog-512 (key = $pass), big-endian
+- HMAC-Streebog-512 (key = $salt), big-endian
+- CRC32
+- 3DES (PT = $salt, key = $pass)
+- DES (PT = $salt, key = $pass)
+- ChaCha20
+- Skip32 (PT = $salt, key = $pass)
 - PBKDF2-HMAC-MD5
 - PBKDF2-HMAC-SHA1
 - PBKDF2-HMAC-SHA256
 - PBKDF2-HMAC-SHA512
-- MyBB
-- phpBB3
-- SMF
-- vBulletin
-- IPB
-- Woltlab Burning Board
-- osCommerce
-- xt:Commerce
-- PrestaShop
-- Mediawiki B type
-- Wordpress
-- Drupal
-- Joomla
-- PHPS
-- Django (SHA-1)
-- Django (PBKDF2-SHA256)
-- EPiServer
-- ColdFusion 10+
-- Apache MD5-APR
-- MySQL
-- PostgreSQL
-- MSSQL
-- Oracle H: Type (Oracle 7+)
-- Oracle S: Type (Oracle 11+)
-- Oracle T: Type (Oracle 12+)
-- Sybase
-- hMailServer
-- DNSSEC (NSEC3)
-- IKE-PSK
-- IPMI2 RAKP
-- iSCSI CHAP
-- Cram MD5
-- MySQL Challenge-Response Authentication (SHA1)
-- PostgreSQL Challenge-Response Authentication (MD5)
-- SIP Digest Authentication (MD5)
-- WPA
-- WPA2
-- NetNTLMv1
-- NetNTLMv1 + ESS
-- NetNTLMv2
-- Kerberos 5 AS-REQ Pre-Auth etype 23
-- Kerberos 5 TGS-REP etype 23
-- Netscape LDAP SHA/SSHA
-- FileZilla Server
-- LM
-- NTLM
-- Domain Cached Credentials (DCC), MS Cache
-- Domain Cached Credentials 2 (DCC2), MS Cache 2
-- MS-AzureSync PBKDF2-HMAC-SHA256
-- descrypt
-- bsdicrypt
-- md5crypt
-- sha256crypt
-- sha512crypt
-- bcrypt
 - scrypt
-- OSX v10.4
-- OSX v10.5
-- OSX v10.6
-- OSX v10.7
-- OSX v10.8
-- OSX v10.9
-- OSX v10.10
-- iTunes Backup < 10.0
-- iTunes Backup >= 10.0
+- phpass
+- Ansible Vault
+- Atlassian (PBKDF2-HMAC-SHA1)
+- Python passlib pbkdf2-sha512
+- Python passlib pbkdf2-sha256
+- Python passlib pbkdf2-sha1
+- TACACS+
+- SIP digest authentication (MD5)
+- IKE-PSK MD5
+- IKE-PSK SHA1
+- WPA-EAPOL-PBKDF2
+- WPA-EAPOL-PMK
+- WPA-PMKID-PBKDF2
+- WPA-PMKID-PMK
+- IPMI2 RAKP HMAC-SHA1
+- CRAM-MD5
+- iSCSI CHAP authentication, MD5(CHAP)
+- JWT (JSON Web Token)
+- Kerberos 5, etype 23, AS-REQ Pre-Auth
+- Kerberos 5, etype 23, TGS-REP
+- Kerberos 5, etype 23, AS-REP
+- Kerberos 5, etype 17, TGS-REP
+- Kerberos 5, etype 18, TGS-REP
+- Kerberos 5, etype 17, Pre-Auth
+- Kerberos 5, etype 18, Pre-Auth
+- NetNTLMv1 / NetNTLMv1+ESS
+- NetNTLMv2
+- Skype
+- PostgreSQL CRAM (MD5)
+- MySQL CRAM (SHA1)
+- RACF
 - AIX {smd5}
 - AIX {ssha1}
 - AIX {ssha256}
 - AIX {ssha512}
-- Cisco-ASA
-- Cisco-PIX
-- Cisco-IOS
-- Cisco $8$
-- Cisco $9$
-- Juniper IVE
-- Juniper Netscreen/SSG (ScreenOS)
-- Fortigate (FortiOS)
-- Android PIN
-- Windows 8+ phone PIN/Password
+- LM
+- QNX /etc/shadow (MD5)
+- QNX /etc/shadow (SHA256)
+- QNX /etc/shadow (SHA512)
+- DPAPI masterkey file v1
+- DPAPI masterkey file v2
 - GRUB 2
-- CRC32
-- RACF
+- MS-AzureSync PBKDF2-HMAC-SHA256
+- BSDi Crypt, Extended DES
+- NTLM
+- macOS v10.4, macOS v10.5, MacOS v10.6
+- macOS v10.7
+- macOS v10.8+ (PBKDF2-SHA512)
 - Radmin2
-- Redmine
-- PunBB
-- OpenCart
-- Citrix Netscaler
+- Samsung Android Password/PIN
+- bcrypt $2*$, Blowfish (Unix)
+- md5crypt, MD5 (Unix), Cisco-IOS $1$ (MD5)
+- descrypt, DES (Unix), Traditional DES
+- sha256crypt $5$, SHA256 (Unix)
+- sha512crypt $6$, SHA512 (Unix)
+- Windows Phone 8+ PIN/password
+- Cisco-ASA MD5
+- Cisco-IOS $8$ (PBKDF2-SHA256)
+- Cisco-IOS $9$ (scrypt)
+- Cisco-IOS type 4 (SHA256)
+- Cisco-PIX MD5
+- Citrix NetScaler
+- Domain Cached Credentials (DCC), MS Cache
+- Domain Cached Credentials 2 (DCC2), MS Cache 2
+- FortiGate (FortiOS)
+- ArubaOS
+- Juniper IVE
+- Juniper NetScreen/SSG (ScreenOS)
+- Juniper/NetBSD sha1crypt
+- MSSQL (2000)
+- MSSQL (2005)
+- MSSQL (2012, 2014)
+- PostgreSQL
+- Oracle H: Type (Oracle 7+)
+- Oracle S: Type (Oracle 11+)
+- Oracle T: Type (Oracle 12+)
+- MySQL323
+- MySQL4.1/MySQL5
+- Sybase ASE
+- hMailServer
+- DNSSEC (NSEC3)
+- CRAM-MD5 Dovecot
+- SSHA-256(Base64), LDAP {SSHA256}
+- SSHA-512(Base64), LDAP {SSHA512}
+- FileZilla Server >= 0.9.55
+- ColdFusion 10+
+- Apache $apr1$ MD5, md5apr1, MD5 (APR)
+- Episerver 6.x < .NET 4
+- Episerver 6.x >= .NET 4
+- nsldap, SHA-1(Base64), Netscape LDAP SHA
+- nsldaps, SSHA-1(Base64), Netscape LDAP SSHA
 - SAP CODVN B (BCODE)
+- SAP CODVN B (BCODE) from RFC_READ_TABLE
 - SAP CODVN F/G (PASSCODE)
+- SAP CODVN F/G (PASSCODE) from RFC_READ_TABLE
 - SAP CODVN H (PWDSALTEDHASH) iSSHA-1
 - PeopleSoft
 - PeopleSoft PS_TOKEN
-- Skype
-- WinZip
-- 7-Zip
-- RAR3-hp
-- RAR5
-- AxCrypt
-- AxCrypt in memory SHA1
-- PDF 1.1 - 1.3 (Acrobat 2 - 4)
-- PDF 1.4 - 1.6 (Acrobat 5 - 8)
-- PDF 1.7 Level 3 (Acrobat 9)
-- PDF 1.7 Level 8 (Acrobat 10 - 11)
-- MS Office <= 2003 MD5
-- MS Office <= 2003 SHA1
-- MS Office 2007
-- MS Office 2010
-- MS Office 2013
+- SolarWinds Orion
 - Lotus Notes/Domino 5
 - Lotus Notes/Domino 6
 - Lotus Notes/Domino 8
-- Bitcoin/Litecoin wallet.dat
-- Blockchain, My Wallet
+- Oracle Transportation Management (SHA256)
+- Huawei sha1(md5($pass).$salt)
+- AuthMe sha256
+- eCryptfs
+- LUKS
+- VeraCrypt
+- FileVault 2
+- DiskCryptor
+- Android FDE (Samsung DEK)
+- Android FDE <= 4.3
+- Apple File System (APFS)
+- TrueCrypt
+- PDF 1.1 - 1.3 (Acrobat 2 - 4)
+- PDF 1.1 - 1.3 (Acrobat 2 - 4), collider #1
+- PDF 1.1 - 1.3 (Acrobat 2 - 4), collider #2
+- PDF 1.4 - 1.6 (Acrobat 5 - 8)
+- PDF 1.7 Level 3 (Acrobat 9)
+- PDF 1.7 Level 8 (Acrobat 10 - 11)
+- MS Office 2007
+- MS Office 2010
+- MS Office 2013
+- MS Office <= 2003 $0/$1, MD5 + RC4
+- MS Office <= 2003 $0/$1, MD5 + RC4, collider #1
+- MS Office <= 2003 $0/$1, MD5 + RC4, collider #2
+- MS Office <= 2003 $3/$4, SHA1 + RC4
+- MS Office <= 2003 $3, SHA1 + RC4, collider #1
+- MS Office <= 2003 $3, SHA1 + RC4, collider #2
+- Open Document Format (ODF) 1.2 (SHA-256, AES)
+- Open Document Format (ODF) 1.1 (SHA-1, Blowfish)
+- Apple Secure Notes
+- JKS Java Key Store Private Keys (SHA1)
 - 1Password, agilekeychain
 - 1Password, cloudkeychain
-- Lastpass
 - Password Safe v2
 - Password Safe v3
-- Keepass 1 (AES/Twofish) and Keepass 2 (AES)
-- Plaintext
-- eCryptfs
-- Android FDE <= 4.3
-- Android FDE (Samsung DEK)
-- TrueCrypt
-- VeraCrypt
-- LUKS
+- LastPass + LastPass sniffed
+- KeePass 1 (AES/Twofish) and KeePass 2 (AES)
+- Bitcoin/Litecoin wallet.dat
+- Electrum Wallet (Salt-Type 1-3)
+- Blockchain, My Wallet
+- Blockchain, My Wallet, V2
+- Blockchain, My Wallet, Second Password (SHA256)
+- Ethereum Pre-Sale Wallet, PBKDF2-HMAC-SHA256
+- Ethereum Wallet, PBKDF2-HMAC-SHA256
+- Ethereum Wallet, SCRYPT
+- 7-Zip
+- RAR3-hp
+- RAR5
+- PKZIP (Compressed)
+- PKZIP (Compressed Multi-File)
+- PKZIP (Mixed Multi-File)
+- PKZIP (Mixed Multi-File Checksum-Only)
+- PKZIP (Uncompressed)
+- PKZIP Master Key
+- PKZIP Master Key (6 byte optimization)
+- iTunes backup < 10.0
+- iTunes backup >= 10.0
+- WinZip
+- Android Backup
+- AxCrypt
+- AxCrypt in-memory SHA1
+- WBB3 (Woltlab Burning Board)
+- vBulletin < v3.8.5
+- vBulletin >= v3.8.5
+- PHPS
+- SMF (Simple Machines Forum) > v1.1
+- MediaWiki B type
+- Redmine
+- Django (PBKDF2-SHA256)
+- Django (SHA-1)
+- Joomla < 2.5.18
+- OpenCart
+- PrestaShop
+- Tripcode
+- Drupal7
+- osCommerce, xt:Commerce
+- PunBB
+- MyBB 1.2+, IPB2+ (Invision Power Board)
+- TOTP (HMAC-SHA1)
 
 ##
 ## Attack-Modes

@@ -9,6 +9,8 @@
 #include "event.h"
 #include "user_options.h"
 #include "shared.h"
+#include "pidfile.h"
+#include "folder.h"
 #include "restore.h"
 
 #if defined (_WIN)
@@ -45,15 +47,16 @@ static int init_restore (hashcat_ctx_t *hashcat_ctx)
 
 static int read_restore (hashcat_ctx_t *hashcat_ctx)
 {
-  restore_ctx_t *restore_ctx = hashcat_ctx->restore_ctx;
+  restore_ctx_t   *restore_ctx   = hashcat_ctx->restore_ctx;
+  folder_config_t *folder_config = hashcat_ctx->folder_config;
 
   if (restore_ctx->enabled == false) return 0;
 
   char *eff_restore_file = restore_ctx->eff_restore_file;
 
-  FILE *fp = fopen (eff_restore_file, "rb");
+  HCFILE fp;
 
-  if (fp == NULL)
+  if (hc_fopen (&fp, eff_restore_file, "rb") == false)
   {
     event_log_error (hashcat_ctx, "Restore file '%s': %s", eff_restore_file, strerror (errno));
 
@@ -62,11 +65,11 @@ static int read_restore (hashcat_ctx_t *hashcat_ctx)
 
   restore_data_t *rd = restore_ctx->rd;
 
-  if (fread (rd, sizeof (restore_data_t), 1, fp) != 1)
+  if (hc_fread (rd, sizeof (restore_data_t), 1, &fp) != 1)
   {
-    event_log_error (hashcat_ctx, "Can't read %s", eff_restore_file);
+    event_log_error (hashcat_ctx, "Cannot read %s", eff_restore_file);
 
-    fclose (fp);
+    hc_fclose (&fp);
 
     return -1;
   }
@@ -75,18 +78,18 @@ static int read_restore (hashcat_ctx_t *hashcat_ctx)
 
   if (rd->argc < 1)
   {
-    event_log_error (hashcat_ctx, "Unusual low number of arguments (argc) within the restore file %s", eff_restore_file);
+    event_log_error (hashcat_ctx, "Unusually low number of arguments (argc) within restore file %s", eff_restore_file);
 
-    fclose (fp);
+    hc_fclose (&fp);
 
     return -1;
   }
 
   if (rd->argc > 250) // some upper bound check is always good (with some dirs/dicts it could be a large string)
   {
-    event_log_error (hashcat_ctx, "Unusual high number of arguments (argc) within the restore file %s", eff_restore_file);
+    event_log_error (hashcat_ctx, "Unusually high number of arguments (argc) within restore file %s", eff_restore_file);
 
-    fclose (fp);
+    hc_fclose (&fp);
 
     return -1;
   }
@@ -97,11 +100,13 @@ static int read_restore (hashcat_ctx_t *hashcat_ctx)
 
   for (u32 i = 0; i < rd->argc; i++)
   {
-    if (fgets (buf, HCBUFSIZ_LARGE - 1, fp) == NULL)
+    if (hc_fgets (buf, HCBUFSIZ_LARGE - 1, &fp) == NULL)
     {
-      event_log_error (hashcat_ctx, "Can't read %s", eff_restore_file);
+      event_log_error (hashcat_ctx, "Cannot read %s", eff_restore_file);
 
-      fclose (fp);
+      hc_fclose (&fp);
+
+      hcfree (buf);
 
       return -1;
     }
@@ -115,7 +120,7 @@ static int read_restore (hashcat_ctx_t *hashcat_ctx)
 
   hcfree (buf);
 
-  fclose (fp);
+  hc_fclose (&fp);
 
   if (hc_path_exist (rd->cwd) == false)
   {
@@ -131,19 +136,51 @@ static int read_restore (hashcat_ctx_t *hashcat_ctx)
     return -1;
   }
 
-  event_log_warning (hashcat_ctx, "Changing current working directory to '%s'", rd->cwd);
-  event_log_warning (hashcat_ctx, NULL);
-
-  if (chdir (rd->cwd))
+  if (strncmp (rd->cwd, folder_config->cwd, sizeof (rd->cwd)) != 0) // check if we need to change the current working directory
   {
-    event_log_error (hashcat_ctx, "The directory '%s' does not exist. It is needed to restore (--restore) the session.", rd->cwd);
-
-    event_log_warning (hashcat_ctx, "You could either create this directory or update the .restore file using e.g. the analyze_hc_restore.pl tool:");
-    event_log_warning (hashcat_ctx, "https://github.com/philsmd/analyze_hc_restore");
-    event_log_warning (hashcat_ctx, "The directory must contain all files and folders mentioned within the command line.");
+    event_log_warning (hashcat_ctx, "Changing current working directory to '%s'", rd->cwd);
     event_log_warning (hashcat_ctx, NULL);
 
-    return -1;
+    if (chdir (rd->cwd))
+    {
+      event_log_error (hashcat_ctx, "Directory '%s' needed to restore the session was not found.", rd->cwd);
+
+      event_log_warning (hashcat_ctx, "Either create the directory, or update the directory within the .restore file.");
+      event_log_warning (hashcat_ctx, "Restore files can be analyzed and modified with analyze_hc_restore.pl:");
+      event_log_warning (hashcat_ctx, "    https://github.com/philsmd/analyze_hc_restore");
+      event_log_warning (hashcat_ctx, "Directory must contain all files and folders from the original command line.");
+      event_log_warning (hashcat_ctx, NULL);
+
+      return -1;
+    }
+
+    // if we are here, we also need to update the folder_config and .pid file:
+
+    /**
+     * updated folders
+     */
+
+    // copy the paths of INSTALL_FOLDER and SHARED_FOLDER from the folder config:
+
+    char *install_folder = hcstrdup (folder_config->install_dir);
+    char *shared_folder  = hcstrdup (folder_config->shared_dir);
+
+    folder_config_destroy (hashcat_ctx);
+
+    const int rc_folder_config_init = folder_config_init (hashcat_ctx, install_folder, shared_folder);
+
+    hcfree (install_folder);
+    hcfree (shared_folder);
+
+    if (rc_folder_config_init == -1) return -1;
+
+    /**
+     * updated pidfile
+     */
+
+    pidfile_ctx_destroy (hashcat_ctx);
+
+    if (pidfile_ctx_init (hashcat_ctx) == -1) return -1;
   }
 
   return 0;
@@ -166,38 +203,38 @@ static int write_restore (hashcat_ctx_t *hashcat_ctx)
 
   char *new_restore_file = restore_ctx->new_restore_file;
 
-  FILE *fp = fopen (new_restore_file, "wb");
+  HCFILE fp;
 
-  if (fp == NULL)
+  if (hc_fopen (&fp, new_restore_file, "wb") == false)
   {
     event_log_error (hashcat_ctx, "%s: %s", new_restore_file, strerror (errno));
 
     return -1;
   }
 
-  if (setvbuf (fp, NULL, _IONBF, 0))
+  if (setvbuf (fp.pfp, NULL, _IONBF, 0))
   {
     event_log_error (hashcat_ctx, "setvbuf file '%s': %s", new_restore_file, strerror (errno));
 
-    fclose (fp);
+    hc_fclose (&fp);
 
     return -1;
   }
 
-  fwrite (rd, sizeof (restore_data_t), 1, fp);
+  hc_fwrite (rd, sizeof (restore_data_t), 1, &fp);
 
   for (u32 i = 0; i < rd->argc; i++)
   {
-    fprintf (fp, "%s", rd->argv[i]);
+    hc_fprintf (&fp, "%s", rd->argv[i]);
 
-    fputc ('\n', fp);
+    hc_fputc ('\n', &fp);
   }
 
-  fflush (fp);
+  hc_fflush (&fp);
 
-  fsync (fileno (fp));
+  fsync (hc_fileno (&fp));
 
-  fclose (fp);
+  hc_fclose (&fp);
 
   rd->masks_pos = 0;
   rd->dicts_pos = 0;
@@ -215,9 +252,7 @@ int cycle_restore (hashcat_ctx_t *hashcat_ctx)
   const char *eff_restore_file = restore_ctx->eff_restore_file;
   const char *new_restore_file = restore_ctx->new_restore_file;
 
-  const int rc_write_restore = write_restore (hashcat_ctx);
-
-  if (rc_write_restore == -1) return -1;
+  if (write_restore (hashcat_ctx) == -1) return -1;
 
   if (hc_path_exist (eff_restore_file) == true)
   {
@@ -264,9 +299,10 @@ int restore_ctx_init (hashcat_ctx_t *hashcat_ctx, int argc, char **argv)
   restore_ctx->enabled = false;
 
   if (user_options->benchmark       == true) return 0;
+  if (user_options->example_hashes  == true) return 0;
   if (user_options->keyspace        == true) return 0;
   if (user_options->left            == true) return 0;
-  if (user_options->opencl_info     == true) return 0;
+  if (user_options->backend_info    == true) return 0;
   if (user_options->show            == true) return 0;
   if (user_options->stdout_flag     == true) return 0;
   if (user_options->speed_only      == true) return 0;
@@ -292,32 +328,30 @@ int restore_ctx_init (hashcat_ctx_t *hashcat_ctx, int argc, char **argv)
   restore_ctx->argc = argc;
   restore_ctx->argv = argv;
 
-  const int rc_init_restore = init_restore (hashcat_ctx);
-
-  if (rc_init_restore == -1) return -1;
+  if (init_restore (hashcat_ctx) == -1) return -1;
 
   restore_ctx->enabled = true;
 
+  restore_ctx->restore_execute = false;
+
   if (user_options->restore == true)
   {
-    const int rc_read_restore = read_restore (hashcat_ctx);
-
-    if (rc_read_restore == -1) return -1;
+    if (read_restore (hashcat_ctx) == -1) return -1;
 
     restore_data_t *rd = restore_ctx->rd;
 
     if (rd->version < RESTORE_VERSION_MIN)
     {
-      event_log_error (hashcat_ctx, "Incompatible restore-file version");
+      event_log_error (hashcat_ctx, "Incompatible restore-file version.");
 
       return -1;
     }
 
     user_options_init (hashcat_ctx);
 
-    const int rc_options_getopt = user_options_getopt (hashcat_ctx, rd->argc, rd->argv);
+    if (user_options_getopt (hashcat_ctx, rd->argc, rd->argv) == -1) return -1;
 
-    if (rc_options_getopt == -1) return -1;
+    restore_ctx->restore_execute = true;
   }
 
   return 0;
@@ -331,7 +365,6 @@ void restore_ctx_destroy (hashcat_ctx_t *hashcat_ctx)
 
   hcfree (restore_ctx->eff_restore_file);
   hcfree (restore_ctx->new_restore_file);
-
   hcfree (restore_ctx->rd);
 
   memset (restore_ctx, 0, sizeof (restore_ctx_t));

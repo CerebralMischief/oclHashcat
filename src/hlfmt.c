@@ -8,21 +8,22 @@
 #include "memory.h"
 #include "filehandling.h"
 #include "hlfmt.h"
+#include "shared.h"
 
-static const char HLFMT_TEXT_HASHCAT[]  = "native hashcat";
-static const char HLFMT_TEXT_PWDUMP[]   = "pwdump";
-static const char HLFMT_TEXT_PASSWD[]   = "passwd";
-static const char HLFMT_TEXT_SHADOW[]   = "shadow";
-static const char HLFMT_TEXT_DCC[]      = "DCC";
-static const char HLFMT_TEXT_DCC2[]     = "DCC 2";
-static const char HLFMT_TEXT_NETNTLM1[] = "NetNTLMv1";
-static const char HLFMT_TEXT_NETNTLM2[] = "NetNTLMv2";
-static const char HLFMT_TEXT_NSLDAP[]   = "nsldap";
-static const char HLFMT_TEXT_NSLDAPS[]  = "nsldaps";
+static const char *HLFMT_TEXT_HASHCAT  = "native hashcat";
+static const char *HLFMT_TEXT_PWDUMP   = "pwdump";
+static const char *HLFMT_TEXT_PASSWD   = "passwd";
+static const char *HLFMT_TEXT_SHADOW   = "shadow";
+static const char *HLFMT_TEXT_DCC      = "DCC";
+static const char *HLFMT_TEXT_DCC2     = "DCC 2";
+static const char *HLFMT_TEXT_NETNTLM1 = "NetNTLMv1";
+static const char *HLFMT_TEXT_NETNTLM2 = "NetNTLMv2";
+static const char *HLFMT_TEXT_NSLDAP   = "nsldap";
+static const char *HLFMT_TEXT_NSLDAPS  = "nsldaps";
 
 // hlfmt hashcat
 
-static void hlfmt_hash_hashcat (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len, char **hashbuf_pos, int *hashbuf_len)
+static void hlfmt_hash_hashcat (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, const int line_len, char **hashbuf_pos, int *hashbuf_len)
 {
   const user_options_t *user_options = hashcat_ctx->user_options;
   const hashconfig_t   *hashconfig   = hashcat_ctx->hashconfig;
@@ -34,8 +35,8 @@ static void hlfmt_hash_hashcat (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *l
   }
   else
   {
-    char *pos = line_buf;
-    int   len = line_len;
+    char  *pos = line_buf;
+    size_t len = line_len;
 
     for (int i = 0; i < line_len; i++, pos++, len--)
     {
@@ -54,12 +55,12 @@ static void hlfmt_hash_hashcat (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *l
   }
 }
 
-static void hlfmt_user_hashcat (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len, char **userbuf_pos, int *userbuf_len)
+static void hlfmt_user_hashcat (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, const int line_len, char **userbuf_pos, int *userbuf_len)
 {
   const hashconfig_t *hashconfig = hashcat_ctx->hashconfig;
 
-  char *pos = NULL;
-  int   len = 0;
+  char  *pos = NULL;
+  size_t len = 0;
 
   int sep_cnt = 0;
 
@@ -86,7 +87,7 @@ static void hlfmt_user_hashcat (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *l
 
 // hlfmt pwdump
 
-static int hlfmt_detect_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len)
+static int hlfmt_detect_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, const char *line_buf, const int line_len)
 {
   int sep_cnt = 0;
 
@@ -111,12 +112,12 @@ static int hlfmt_detect_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *l
   return 0;
 }
 
-static void hlfmt_hash_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len, char **hashbuf_pos, int *hashbuf_len)
+static void hlfmt_hash_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, const int line_len, char **hashbuf_pos, int *hashbuf_len)
 {
   const hashconfig_t *hashconfig = hashcat_ctx->hashconfig;
 
-  char *pos = NULL;
-  int   len = 0;
+  char  *pos = NULL;
+  size_t len = 0;
 
   int sep_cnt = 0;
 
@@ -129,18 +130,18 @@ static void hlfmt_hash_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *li
       continue;
     }
 
-    if (hashconfig->hash_mode == 1000)
+    if (hashconfig->pwdump_column == PWDUMP_COLUMN_LM_HASH)
     {
-      if (sep_cnt == 3)
+      if (sep_cnt == 2)
       {
         if (pos == NULL) pos = line_buf + i;
 
         len++;
       }
     }
-    else if (hashconfig->hash_mode == 3000)
+    else if (hashconfig->pwdump_column == PWDUMP_COLUMN_NTLM_HASH)
     {
-      if (sep_cnt == 2)
+      if (sep_cnt == 3)
       {
         if (pos == NULL) pos = line_buf + i;
 
@@ -153,10 +154,10 @@ static void hlfmt_hash_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *li
   *hashbuf_len = len;
 }
 
-static void hlfmt_user_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len, char **userbuf_pos, int *userbuf_len)
+static void hlfmt_user_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, const int line_len, char **userbuf_pos, int *userbuf_len)
 {
-  char *pos = NULL;
-  int   len = 0;
+  char  *pos = NULL;
+  size_t len = 0;
 
   int sep_cnt = 0;
 
@@ -183,7 +184,7 @@ static void hlfmt_user_pwdump (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *li
 
 // hlfmt passwd
 
-static int hlfmt_detect_passwd (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len)
+static int hlfmt_detect_passwd (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, const char *line_buf, const int line_len)
 {
   int sep_cnt = 0;
 
@@ -208,10 +209,10 @@ static int hlfmt_detect_passwd (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *l
   return 0;
 }
 
-static void hlfmt_hash_passwd (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len, char **hashbuf_pos, int *hashbuf_len)
+static void hlfmt_hash_passwd (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, const int line_len, char **hashbuf_pos, int *hashbuf_len)
 {
-  char *pos = NULL;
-  int   len = 0;
+  char  *pos = NULL;
+  size_t len = 0;
 
   int sep_cnt = 0;
 
@@ -236,10 +237,10 @@ static void hlfmt_hash_passwd (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *li
   *hashbuf_len = len;
 }
 
-static void hlfmt_user_passwd (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len, char **userbuf_pos, int *userbuf_len)
+static void hlfmt_user_passwd (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, const int line_len, char **userbuf_pos, int *userbuf_len)
 {
-  char *pos = NULL;
-  int   len = 0;
+  char  *pos = NULL;
+  size_t len = 0;
 
   int sep_cnt = 0;
 
@@ -266,7 +267,7 @@ static void hlfmt_user_passwd (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *li
 
 // hlfmt shadow
 
-static int hlfmt_detect_shadow (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len)
+static int hlfmt_detect_shadow (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, const char *line_buf, const int line_len)
 {
   int sep_cnt = 0;
 
@@ -280,38 +281,38 @@ static int hlfmt_detect_shadow (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *l
   return 0;
 }
 
-static void hlfmt_hash_shadow (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len, char **hashbuf_pos, int *hashbuf_len)
+static void hlfmt_hash_shadow (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, const int line_len, char **hashbuf_pos, int *hashbuf_len)
 {
   hlfmt_hash_passwd (hashcat_ctx, line_buf, line_len, hashbuf_pos, hashbuf_len);
 }
 
-static void hlfmt_user_shadow (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, int line_len, char **userbuf_pos, int *userbuf_len)
+static void hlfmt_user_shadow (MAYBE_UNUSED hashcat_ctx_t *hashcat_ctx, char *line_buf, const int line_len, char **userbuf_pos, int *userbuf_len)
 {
   hlfmt_user_passwd (hashcat_ctx, line_buf, line_len, userbuf_pos, userbuf_len);
 }
 
 // hlfmt main
 
-char *strhlfmt (const u32 hashfile_format)
+const char *strhlfmt (const u32 hashfile_format)
 {
   switch (hashfile_format)
   {
-    case HLFMT_HASHCAT:  return ((char *) HLFMT_TEXT_HASHCAT);
-    case HLFMT_PWDUMP:   return ((char *) HLFMT_TEXT_PWDUMP);
-    case HLFMT_PASSWD:   return ((char *) HLFMT_TEXT_PASSWD);
-    case HLFMT_SHADOW:   return ((char *) HLFMT_TEXT_SHADOW);
-    case HLFMT_DCC:      return ((char *) HLFMT_TEXT_DCC);
-    case HLFMT_DCC2:     return ((char *) HLFMT_TEXT_DCC2);
-    case HLFMT_NETNTLM1: return ((char *) HLFMT_TEXT_NETNTLM1);
-    case HLFMT_NETNTLM2: return ((char *) HLFMT_TEXT_NETNTLM2);
-    case HLFMT_NSLDAP:   return ((char *) HLFMT_TEXT_NSLDAP);
-    case HLFMT_NSLDAPS:  return ((char *) HLFMT_TEXT_NSLDAPS);
+    case HLFMT_HASHCAT:  return HLFMT_TEXT_HASHCAT;
+    case HLFMT_PWDUMP:   return HLFMT_TEXT_PWDUMP;
+    case HLFMT_PASSWD:   return HLFMT_TEXT_PASSWD;
+    case HLFMT_SHADOW:   return HLFMT_TEXT_SHADOW;
+    case HLFMT_DCC:      return HLFMT_TEXT_DCC;
+    case HLFMT_DCC2:     return HLFMT_TEXT_DCC2;
+    case HLFMT_NETNTLM1: return HLFMT_TEXT_NETNTLM1;
+    case HLFMT_NETNTLM2: return HLFMT_TEXT_NETNTLM2;
+    case HLFMT_NSLDAP:   return HLFMT_TEXT_NSLDAP;
+    case HLFMT_NSLDAPS:  return HLFMT_TEXT_NSLDAPS;
   }
 
-  return ((char *) "Unknown");
+  return "Unknown";
 }
 
-void hlfmt_hash (hashcat_ctx_t *hashcat_ctx, u32 hashfile_format, char *line_buf, int line_len, char **hashbuf_pos, int *hashbuf_len)
+void hlfmt_hash (hashcat_ctx_t *hashcat_ctx, u32 hashfile_format, char *line_buf, const int line_len, char **hashbuf_pos, int *hashbuf_len)
 {
   switch (hashfile_format)
   {
@@ -322,7 +323,7 @@ void hlfmt_hash (hashcat_ctx_t *hashcat_ctx, u32 hashfile_format, char *line_buf
   }
 }
 
-void hlfmt_user (hashcat_ctx_t *hashcat_ctx, u32 hashfile_format, char *line_buf, int line_len, char **userbuf_pos, int *userbuf_len)
+void hlfmt_user (hashcat_ctx_t *hashcat_ctx, u32 hashfile_format, char *line_buf, const int line_len, char **userbuf_pos, int *userbuf_len)
 {
   switch (hashfile_format)
   {
@@ -333,14 +334,13 @@ void hlfmt_user (hashcat_ctx_t *hashcat_ctx, u32 hashfile_format, char *line_buf
   }
 }
 
-u32 hlfmt_detect (hashcat_ctx_t *hashcat_ctx, FILE *fp, u32 max_check)
+u32 hlfmt_detect (hashcat_ctx_t *hashcat_ctx, HCFILE *fp, u32 max_check)
 {
   const hashconfig_t *hashconfig = hashcat_ctx->hashconfig;
 
   // Exception: those formats are wrongly detected as HLFMT_SHADOW, prevent it
 
-  if (hashconfig->hash_mode == 5300) return HLFMT_HASHCAT;
-  if (hashconfig->hash_mode == 5400) return HLFMT_HASHCAT;
+  if (hashconfig->hlfmt_disable == true) return HLFMT_HASHCAT;
 
   u32 *formats_cnt = (u32 *) hccalloc (HLFMTS_CNT, sizeof (u32));
 
@@ -348,9 +348,9 @@ u32 hlfmt_detect (hashcat_ctx_t *hashcat_ctx, FILE *fp, u32 max_check)
 
   char *line_buf = (char *) hcmalloc (HCBUFSIZ_LARGE);
 
-  while (!feof (fp))
+  while (!hc_feof (fp))
   {
-    int line_len = fgetl (fp, line_buf);
+    const size_t line_len = fgetl (fp, line_buf, HCBUFSIZ_LARGE);
 
     if (line_len == 0) continue;
 

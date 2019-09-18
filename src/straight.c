@@ -9,15 +9,20 @@
 #include "event.h"
 #include "logfile.h"
 #include "shared.h"
-#include "filehandling.h"
 #include "folder.h"
 #include "rp.h"
-#include "rp_cpu.h"
-#include "straight.h"
 #include "wordlist.h"
+#include "straight.h"
 
 static int straight_ctx_add_wl (hashcat_ctx_t *hashcat_ctx, const char *dict)
 {
+  if (hc_path_has_bom (dict) == true)
+  {
+    event_log_error (hashcat_ctx, "%s: Byte Order Mark (BOM) was detected", dict);
+
+    return -1;
+  }
+
   straight_ctx_t *straight_ctx = hashcat_ctx->straight_ctx;
 
   if (straight_ctx->dicts_avail == straight_ctx->dicts_cnt)
@@ -65,16 +70,18 @@ int straight_ctx_update_loop (hashcat_ctx_t *hashcat_ctx)
         logfile_sub_var_string ("rulefile", user_options->rp_files[i]);
       }
 
-      FILE *fd = fopen (straight_ctx->dict, "rb");
+      HCFILE fp;
 
-      if (fd == NULL)
+      if (hc_fopen (&fp, straight_ctx->dict, "rb") == false)
       {
         event_log_error (hashcat_ctx, "%s: %s", straight_ctx->dict, strerror (errno));
 
         return -1;
       }
 
-      const int rc = count_words (hashcat_ctx, fd, straight_ctx->dict, &status_ctx->words_cnt);
+      const int rc = count_words (hashcat_ctx, &fp, straight_ctx->dict, &status_ctx->words_cnt);
+
+      hc_fclose (&fp);
 
       if (rc == -1)
       {
@@ -82,8 +89,6 @@ int straight_ctx_update_loop (hashcat_ctx_t *hashcat_ctx)
 
         return -1;
       }
-
-      fclose (fd);
 
       if (status_ctx->words_cnt == 0)
       {
@@ -100,16 +105,18 @@ int straight_ctx_update_loop (hashcat_ctx_t *hashcat_ctx)
 
     if (combinator_ctx->combs_mode == COMBINATOR_MODE_BASE_LEFT)
     {
-      FILE *fd = fopen (combinator_ctx->dict1, "rb");
+      HCFILE fp;
 
-      if (fd == NULL)
+      if (hc_fopen (&fp, combinator_ctx->dict1, "rb") == false)
       {
         event_log_error (hashcat_ctx, "%s: %s", combinator_ctx->dict1, strerror (errno));
 
         return -1;
       }
 
-      const int rc = count_words (hashcat_ctx, fd, combinator_ctx->dict1, &status_ctx->words_cnt);
+      const int rc = count_words (hashcat_ctx, &fp, combinator_ctx->dict1, &status_ctx->words_cnt);
+
+      hc_fclose (&fp);
 
       if (rc == -1)
       {
@@ -117,21 +124,21 @@ int straight_ctx_update_loop (hashcat_ctx_t *hashcat_ctx)
 
         return -1;
       }
-
-      fclose (fd);
     }
     else if (combinator_ctx->combs_mode == COMBINATOR_MODE_BASE_RIGHT)
     {
-      FILE *fd = fopen (combinator_ctx->dict2, "rb");
+      HCFILE fp;
 
-      if (fd == NULL)
+      if (hc_fopen (&fp, combinator_ctx->dict2, "rb") == false)
       {
         event_log_error (hashcat_ctx, "%s: %s", combinator_ctx->dict2, strerror (errno));
 
         return -1;
       }
 
-      const int rc = count_words (hashcat_ctx, fd, combinator_ctx->dict2, &status_ctx->words_cnt);
+      const int rc = count_words (hashcat_ctx, &fp, combinator_ctx->dict2, &status_ctx->words_cnt);
+
+      hc_fclose (&fp);
 
       if (rc == -1)
       {
@@ -139,8 +146,6 @@ int straight_ctx_update_loop (hashcat_ctx_t *hashcat_ctx)
 
         return -1;
       }
-
-      fclose (fd);
     }
 
     if (status_ctx->words_cnt == 0)
@@ -168,16 +173,18 @@ int straight_ctx_update_loop (hashcat_ctx_t *hashcat_ctx)
     logfile_sub_string (straight_ctx->dict);
     logfile_sub_string (mask_ctx->mask);
 
-    FILE *fd = fopen (straight_ctx->dict, "rb");
+    HCFILE fp;
 
-    if (fd == NULL)
+    if (hc_fopen (&fp, straight_ctx->dict, "rb") == false)
     {
       event_log_error (hashcat_ctx, "%s: %s", straight_ctx->dict, strerror (errno));
 
       return -1;
     }
 
-    const int rc = count_words (hashcat_ctx, fd, straight_ctx->dict, &status_ctx->words_cnt);
+    const int rc = count_words (hashcat_ctx, &fp, straight_ctx->dict, &status_ctx->words_cnt);
+
+    hc_fclose (&fp);
 
     if (rc == -1)
     {
@@ -185,8 +192,6 @@ int straight_ctx_update_loop (hashcat_ctx_t *hashcat_ctx)
 
       return -1;
     }
-
-    fclose (fd);
 
     if (status_ctx->words_cnt == 0)
     {
@@ -201,18 +206,18 @@ int straight_ctx_update_loop (hashcat_ctx_t *hashcat_ctx)
 
 int straight_ctx_init (hashcat_ctx_t *hashcat_ctx)
 {
-  hashconfig_t         *hashconfig          = hashcat_ctx->hashconfig;
   straight_ctx_t       *straight_ctx        = hashcat_ctx->straight_ctx;
   user_options_extra_t *user_options_extra  = hashcat_ctx->user_options_extra;
   user_options_t       *user_options        = hashcat_ctx->user_options;
 
   straight_ctx->enabled = false;
 
-  if (user_options->left        == true) return 0;
-  if (user_options->opencl_info == true) return 0;
-  if (user_options->show        == true) return 0;
-  if (user_options->usage       == true) return 0;
-  if (user_options->version     == true) return 0;
+  if (user_options->example_hashes == true) return 0;
+  if (user_options->left           == true) return 0;
+  if (user_options->backend_info   == true) return 0;
+  if (user_options->show           == true) return 0;
+  if (user_options->usage          == true) return 0;
+  if (user_options->version        == true) return 0;
 
   if (user_options->attack_mode == ATTACK_MODE_BF) return 0;
 
@@ -234,55 +239,13 @@ int straight_ctx_init (hashcat_ctx_t *hashcat_ctx)
   {
     if (user_options->rp_files_cnt)
     {
-      const int rc_kernel_load = kernel_rules_load (hashcat_ctx, &straight_ctx->kernel_rules_buf, &straight_ctx->kernel_rules_cnt);
-
-      if (rc_kernel_load == -1) return -1;
+      if (kernel_rules_load (hashcat_ctx, &straight_ctx->kernel_rules_buf, &straight_ctx->kernel_rules_cnt) == -1) return -1;
     }
     else if (user_options->rp_gen)
     {
-      const int rc_kernel_generate = kernel_rules_generate (hashcat_ctx, &straight_ctx->kernel_rules_buf, &straight_ctx->kernel_rules_cnt);
-
-      if (rc_kernel_generate == -1) return -1;
+      if (kernel_rules_generate (hashcat_ctx, &straight_ctx->kernel_rules_buf, &straight_ctx->kernel_rules_cnt) == -1) return -1;
     }
   }
-
-  // If we have a NOOP rule then we can process words from wordlists > length 32 for slow hashes
-
-  u32 pw_min = hashconfig->pw_min;
-  u32 pw_max = hashconfig->pw_max;
-
-  const bool has_noop = kernel_rules_has_noop (straight_ctx->kernel_rules_buf, straight_ctx->kernel_rules_cnt);
-
-  if (has_noop == false)
-  {
-    switch (user_options_extra->attack_kern)
-    {
-      case ATTACK_KERN_STRAIGHT:  if (pw_max > PW_DICTMAX) pw_max = PW_DICTMAX;
-                                  break;
-      case ATTACK_KERN_COMBI:     if (pw_max > PW_DICTMAX) pw_max = PW_DICTMAX;
-                                  break;
-    }
-  }
-  else
-  {
-    if (hashconfig->attack_exec == ATTACK_EXEC_INSIDE_KERNEL)
-    {
-      switch (user_options_extra->attack_kern)
-      {
-        case ATTACK_KERN_STRAIGHT:  if (pw_max > PW_DICTMAX) pw_max = PW_DICTMAX;
-                                    break;
-        case ATTACK_KERN_COMBI:     if (pw_max > PW_DICTMAX) pw_max = PW_DICTMAX;
-                                    break;
-      }
-    }
-    else
-    {
-      // in this case we can process > 32
-    }
-  }
-
-  hashconfig->pw_min = pw_min;
-  hashconfig->pw_max = pw_max;
 
   /**
    * wordlist based work
@@ -323,9 +286,7 @@ int straight_ctx_init (hashcat_ctx_t *hashcat_ctx)
 
               if (hc_path_is_file (l1_filename) == true)
               {
-                const int rc = straight_ctx_add_wl (hashcat_ctx, l1_filename);
-
-                if (rc == -1)
+                if (straight_ctx_add_wl (hashcat_ctx, l1_filename) == -1)
                 {
                   hcfree (dictionary_files);
 
@@ -339,9 +300,7 @@ int straight_ctx_init (hashcat_ctx_t *hashcat_ctx)
         }
         else
         {
-          const int rc = straight_ctx_add_wl (hashcat_ctx, l0_filename);
-
-          if (rc == -1) return -1;
+          if (straight_ctx_add_wl (hashcat_ctx, l0_filename) == -1) return -1;
         }
       }
 
@@ -394,9 +353,7 @@ int straight_ctx_init (hashcat_ctx_t *hashcat_ctx)
 
             if (hc_path_is_file (l1_filename) == true)
             {
-              const int rc = straight_ctx_add_wl (hashcat_ctx, l1_filename);
-
-              if (rc == -1)
+              if (straight_ctx_add_wl (hashcat_ctx, l1_filename) == -1)
               {
                 hcfree (dictionary_files);
 
@@ -410,9 +367,7 @@ int straight_ctx_init (hashcat_ctx_t *hashcat_ctx)
       }
       else
       {
-        const int rc = straight_ctx_add_wl (hashcat_ctx, l0_filename);
-
-        if (rc == -1) return -1;
+        if (straight_ctx_add_wl (hashcat_ctx, l0_filename) == -1) return -1;
       }
     }
 
@@ -456,9 +411,7 @@ int straight_ctx_init (hashcat_ctx_t *hashcat_ctx)
 
             if (hc_path_is_file (l1_filename) == true)
             {
-              const int rc = straight_ctx_add_wl (hashcat_ctx, l1_filename);
-
-              if (rc == -1)
+              if (straight_ctx_add_wl (hashcat_ctx, l1_filename) == -1)
               {
                 hcfree (dictionary_files);
 
@@ -472,9 +425,7 @@ int straight_ctx_init (hashcat_ctx_t *hashcat_ctx)
       }
       else
       {
-        const int rc = straight_ctx_add_wl (hashcat_ctx, l0_filename);
-
-        if (rc == -1) return -1;
+        if (straight_ctx_add_wl (hashcat_ctx, l0_filename) == -1) return -1;
       }
     }
 

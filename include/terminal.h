@@ -26,10 +26,10 @@ void goodbye_screen (hashcat_ctx_t *hashcat_ctx, const time_t proc_start, const 
 
 int setup_console (void);
 
-void send_prompt (void);
-void clear_prompt (void);
+void send_prompt  (hashcat_ctx_t *hashcat_ctx);
+void clear_prompt (hashcat_ctx_t *hashcat_ctx);
 
-void *thread_keypress (void *p);
+HC_API_CALL void *thread_keypress (void *p);
 
 #if defined (_WIN)
 void SetConsoleWindowSize (const int x);
@@ -39,8 +39,12 @@ int tty_break(void);
 int tty_getchar(void);
 int tty_fix(void);
 
-void opencl_info                        (hashcat_ctx_t *hashcat_ctx);
-void opencl_info_compact                (hashcat_ctx_t *hashcat_ctx);
+void compress_terminal_line_length (char *out_buf, const size_t keep_from_beginning, const size_t keep_from_end);
+
+void example_hashes                     (hashcat_ctx_t *hashcat_ctx);
+
+void backend_info                       (hashcat_ctx_t *hashcat_ctx);
+void backend_info_compact               (hashcat_ctx_t *hashcat_ctx);
 
 void status_progress_machine_readable   (hashcat_ctx_t *hashcat_ctx);
 void status_progress                    (hashcat_ctx_t *hashcat_ctx);

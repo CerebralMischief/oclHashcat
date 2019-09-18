@@ -7,16 +7,18 @@
 #include "types.h"
 #include "event.h"
 #include "locking.h"
-#include "rp_kernel_on_cpu.h"
+#include "emu_inc_rp.h"
+#include "emu_inc_rp_optimized.h"
 #include "mpsp.h"
-#include "opencl.h"
+#include "backend.h"
+#include "shared.h"
 #include "stdout.h"
 
 static void out_flush (out_t *out)
 {
   if (out->len == 0) return;
 
-  fwrite (out->buf, 1, out->len, out->fp);
+  hc_fwrite (out->buf, 1, out->len, &out->fp);
 
   out->len = 0;
 }
@@ -42,13 +44,13 @@ static void out_push (out_t *out, const u8 *pw_buf, const int pw_len)
 
   #endif
 
-  if (out->len >= BUFSIZ - 100)
+  if (out->len >= HCBUFSIZ_SMALL - 300)
   {
     out_flush (out);
   }
 }
 
-int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u32 pws_cnt)
+int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param, const u64 pws_cnt)
 {
   combinator_ctx_t *combinator_ctx = hashcat_ctx->combinator_ctx;
   hashconfig_t     *hashconfig     = hashcat_ctx->hashconfig;
@@ -57,38 +59,38 @@ int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param,
   straight_ctx_t   *straight_ctx   = hashcat_ctx->straight_ctx;
   user_options_t   *user_options   = hashcat_ctx->user_options;
 
-  out_t out;
-
-  out.fp = stdout;
-
   char *filename = outfile_ctx->filename;
+
+  out_t out;
 
   if (filename)
   {
-    FILE *fp = fopen (filename, "ab");
-
-    if (fp == NULL)
+    if (hc_fopen (&out.fp, filename, "ab") == false)
     {
       event_log_error (hashcat_ctx, "%s: %s", filename, strerror (errno));
 
       return -1;
     }
 
-    if (lock_file (fp) == -1)
+    if (hc_lockfile (&out.fp) == -1)
     {
-      fclose (fp);
+      hc_fclose (&out.fp);
 
       event_log_error (hashcat_ctx, "%s: %s", filename, strerror (errno));
 
       return -1;
     }
-
-    out.fp = fp;
+  }
+  else
+  {
+    out.fp.is_gzip = false;
+    out.fp.pfp = stdout;
+    out.fp.fd = fileno (stdout);
   }
 
   out.len = 0;
 
-  u32 plain_buf[16] = { 0 };
+  u32 plain_buf[64] = { 0 };
 
   u8 *plain_ptr = (u8 *) plain_buf;
 
@@ -100,29 +102,39 @@ int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param,
   {
     pw_t pw;
 
-    for (u32 gidvid = 0; gidvid < pws_cnt; gidvid++)
+    for (u64 gidvid = 0; gidvid < pws_cnt; gidvid++)
     {
       const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
 
       if (rc == -1)
       {
-        if (filename) fclose (out.fp);
+        if (filename) hc_fclose (&out.fp);
 
         return -1;
       }
 
-      const u32 pos = device_param->innerloop_pos;
-
       for (u32 il_pos = 0; il_pos < il_cnt; il_pos++)
       {
-        for (int i = 0; i < 8; i++)
+        const u32 off = device_param->innerloop_pos + il_pos;
+
+        if (hashconfig->opti_type & OPTI_TYPE_OPTIMIZED_KERNEL)
         {
-          plain_buf[i] = pw.i[i];
+          for (int i = 0; i < 8; i++)
+          {
+            plain_buf[i] = pw.i[i];
+          }
+
+          plain_len = apply_rules_optimized (straight_ctx->kernel_rules_buf[off].cmds, &plain_buf[0], &plain_buf[4], pw.pw_len);
         }
+        else
+        {
+          for (int i = 0; i < 64; i++)
+          {
+            plain_buf[i] = pw.i[i];
+          }
 
-        plain_len = pw.pw_len;
-
-        plain_len = apply_rules (straight_ctx->kernel_rules_buf[pos + il_pos].cmds, &plain_buf[0], &plain_buf[4], plain_len);
+          plain_len = apply_rules (straight_ctx->kernel_rules_buf[off].cmds, plain_buf, pw.pw_len);
+        }
 
         if (plain_len > hashconfig->pw_max) plain_len = hashconfig->pw_max;
 
@@ -134,20 +146,20 @@ int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param,
   {
     pw_t pw;
 
-    for (u32 gidvid = 0; gidvid < pws_cnt; gidvid++)
+    for (u64 gidvid = 0; gidvid < pws_cnt; gidvid++)
     {
       const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
 
       if (rc == -1)
       {
-        if (filename) fclose (out.fp);
+        if (filename) hc_fclose (&out.fp);
 
         return -1;
       }
 
       for (u32 il_pos = 0; il_pos < il_cnt; il_pos++)
       {
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 64; i++)
         {
           plain_buf[i] = pw.i[i];
         }
@@ -178,7 +190,7 @@ int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param,
   }
   else if (user_options->attack_mode == ATTACK_MODE_BF)
   {
-    for (u32 gidvid = 0; gidvid < pws_cnt; gidvid++)
+    for (u64 gidvid = 0; gidvid < pws_cnt; gidvid++)
     {
       for (u32 il_pos = 0; il_pos < il_cnt; il_pos++)
       {
@@ -204,20 +216,20 @@ int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param,
   {
     pw_t pw;
 
-    for (u32 gidvid = 0; gidvid < pws_cnt; gidvid++)
+    for (u64 gidvid = 0; gidvid < pws_cnt; gidvid++)
     {
       const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
 
       if (rc == -1)
       {
-        if (filename) fclose (out.fp);
+        if (filename) hc_fclose (&out.fp);
 
         return -1;
       }
 
       for (u32 il_pos = 0; il_pos < il_cnt; il_pos++)
       {
-        for (int i = 0; i < 8; i++)
+        for (int i = 0; i < 64; i++)
         {
           plain_buf[i] = pw.i[i];
         }
@@ -241,36 +253,36 @@ int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param,
   {
     pw_t pw;
 
-    for (u32 gidvid = 0; gidvid < pws_cnt; gidvid++)
+    for (u64 gidvid = 0; gidvid < pws_cnt; gidvid++)
     {
       const int rc = gidd_to_pw_t (hashcat_ctx, device_param, gidvid, &pw);
 
       if (rc == -1)
       {
-        if (filename) fclose (out.fp);
+        if (filename) hc_fclose (&out.fp);
 
         return -1;
       }
 
       for (u32 il_pos = 0; il_pos < il_cnt; il_pos++)
       {
-        for (int i = 0; i < 8; i++)
-        {
-          plain_buf[i] = pw.i[i];
-        }
-
-        plain_len = pw.pw_len;
-
-        u64 off = device_param->kernel_params_mp_buf64[3] + il_pos;
+        u64 off = device_param->kernel_params_mp_buf64[3] + gidvid;
 
         u32 start = 0;
         u32 stop  = device_param->kernel_params_mp_buf32[4];
 
-        memmove (plain_ptr + stop, plain_ptr, plain_len);
-
         sp_exec (off, (char *) plain_ptr, mask_ctx->root_css_buf, mask_ctx->markov_css_buf, start, start + stop);
 
-        plain_len += start + stop;
+        plain_len = stop;
+
+        char *comb_buf = (char *) device_param->combs_buf[il_pos].i;
+        u32   comb_len =          device_param->combs_buf[il_pos].pw_len;
+
+        memcpy (plain_ptr + plain_len, comb_buf, comb_len);
+
+        plain_len += comb_len;
+
+        if (plain_len > hashconfig->pw_max) plain_len = hashconfig->pw_max;
 
         out_push (&out, plain_ptr, plain_len);
       }
@@ -279,7 +291,7 @@ int process_stdout (hashcat_ctx_t *hashcat_ctx, hc_device_param_t *device_param,
 
   out_flush (&out);
 
-  if (filename) fclose (out.fp);
+  if (filename) hc_fclose (&out.fp);
 
   return 0;
 }
